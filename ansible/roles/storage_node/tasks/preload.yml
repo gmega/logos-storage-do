@@ -1,0 +1,53 @@
+---
+# Preloads an RS node with content: Jarrad's book and a random 200MB file.
+# uploadUrl takes an absolute file path and a buffer size (required).
+
+- name: Download Jarrad's book
+  ansible.builtin.get_url:
+    url: "{{ book_url }}"
+    dest: "{{ book_file }}"
+    mode: "0644"
+
+- name: Generate the random {{ random_file_mb }}MB file
+  ansible.builtin.command: "dd if=/dev/urandom of={{ random_file }} bs=1M count={{ random_file_mb }}"
+  args:
+    creates: "{{ random_file }}"
+
+- name: Upload the book
+  ansible.builtin.command: >
+    {{ logos_bin }} --config-dir={{ logos_config_dir }}
+    call storage_module uploadUrl {{ book_file }} {{ upload_buffer }}
+  args:
+    creates: "{{ logos_home }}/.book-uploaded"
+  register: upload_book
+
+- name: Mark book uploaded
+  ansible.builtin.file:
+    path: "{{ logos_home }}/.book-uploaded"
+    state: touch
+    mode: "0644"
+  when: upload_book is changed
+
+- name: Upload the random file
+  ansible.builtin.command: >
+    {{ logos_bin }} --config-dir={{ logos_config_dir }}
+    call storage_module uploadUrl {{ random_file }} {{ upload_buffer }}
+  args:
+    creates: "{{ logos_home }}/.random-uploaded"
+  register: upload_random
+
+- name: Mark random file uploaded
+  ansible.builtin.file:
+    path: "{{ logos_home }}/.random-uploaded"
+    state: touch
+    mode: "0644"
+  when: upload_random is changed
+
+- name: List manifests (preloaded content)
+  ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests"
+  register: manifests
+  changed_when: false
+
+- name: Show manifests
+  ansible.builtin.debug:
+    msg: "{{ (manifests.stdout | from_json).result.value | default(manifests.stdout) }}"

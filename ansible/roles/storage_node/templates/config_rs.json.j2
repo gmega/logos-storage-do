@@ -1,0 +1,12 @@
+{
+  "log-level": "DEBUG",
+  "data-dir": "{{ logos_data_dir }}",
+  "nat": "extip:{{ public_ip }}",
+  "listen-ip": "{{ public_ip }}",
+  "listen-port": {{ listen_port }},
+  "disc-port": {{ disc_port }},
+  "mix-enabled": true,
+  "bootstrap-node": ["{{ bootstrap_udp_spr }}"],
+  "mix-pool": "{{ mix_pool_file }}",
+  "dht-mix-proxy": {{ dht_mix_proxy | to_json }}
+}

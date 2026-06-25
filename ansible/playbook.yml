@@ -11,7 +11,7 @@
   tasks:
     - name: Build
       ansible.builtin.import_role:
-        name: mp_node
+        name: storage_node
         tasks_from: build
 
 - name: "Phase 2 — Start bootstrap node and capture its UDP SPR"
@@ -21,11 +21,11 @@
   tasks:
     - name: Run node
       ansible.builtin.import_role:
-        name: mp_node
+        name: storage_node
         tasks_from: run
     - name: Capture UDP SPR
       ansible.builtin.import_role:
-        name: mp_node
+        name: storage_node
         tasks_from: get_udp_spr
 
 - name: "Phase 3 — Start follower nodes (bootstrapped off node 1)"
@@ -37,7 +37,7 @@
   tasks:
     - name: Run node
       ansible.builtin.import_role:
-        name: mp_node
+        name: storage_node
         tasks_from: run
 
 - name: "Phase 4 — Export mix info + SPRs from every node"
@@ -47,7 +47,7 @@
   tasks:
     - name: Export
       ansible.builtin.import_role:
-        name: mp_node
+        name: storage_node
         tasks_from: export
 
 - name: "Phase 5 — Merge artifacts on the controller"

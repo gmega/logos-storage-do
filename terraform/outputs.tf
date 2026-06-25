@@ -8,6 +8,11 @@ output "bootstrap_node" {
   value       = digitalocean_droplet.mp[0].name
 }
 
+output "rs_droplet_ips" {
+  description = "Public IPv4 address of each Regular Storage node."
+  value       = { for d in digitalocean_droplet.rs : d.name => d.ipv4_address }
+}
+
 output "bucket_name" {
   description = "Spaces bucket holding the published artifacts."
   value       = digitalocean_spaces_bucket.artifacts.name

@@ -38,11 +38,25 @@ resource "digitalocean_droplet" "mp" {
   resize_disk = false
 }
 
+# Regular Storage (RS) nodes. Same toolchain/build as MP nodes, but configured
+# to USE the mix network (mix-pool + dht-mix-proxy) rather than relay it.
+resource "digitalocean_droplet" "rs" {
+  count    = var.rs_node_count
+  name     = "${var.rs_name_prefix}-${count.index + 1}"
+  image    = var.image
+  size     = var.droplet_size
+  region   = var.region
+  ssh_keys = [data.digitalocean_ssh_key.default.fingerprint]
+  tags     = concat(var.tags, ["regular-storage"])
+
+  resize_disk = false
+}
+
 # Cloud firewall: SSH for provisioning, libp2p TCP listen port, UDP discovery
-# port. Everything else is denied inbound; all egress allowed.
+# port. Everything else is denied inbound; all egress allowed. Covers MP + RS.
 resource "digitalocean_firewall" "mp" {
   name        = "${var.name_prefix}-fw"
-  droplet_ids = digitalocean_droplet.mp[*].id
+  droplet_ids = concat(digitalocean_droplet.mp[*].id, digitalocean_droplet.rs[*].id)
 
   inbound_rule {
     protocol         = "tcp"
@@ -105,6 +119,13 @@ resource "local_file" "ansible_inventory" {
         ip        = d.ipv4_address
         index     = idx + 1
         bootstrap = idx == 0
+      }
+    ]
+    rs_nodes = [
+      for idx, d in digitalocean_droplet.rs : {
+        name  = d.name
+        ip    = d.ipv4_address
+        index = idx + 1
       }
     ]
   })

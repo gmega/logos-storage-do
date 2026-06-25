@@ -20,6 +20,11 @@ ${n.name}
 %{ endif ~}
 %{ endfor ~}
 
-[mp_nodes:vars]
+[rs_nodes]
+%{ for n in rs_nodes ~}
+${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip}
+%{ endfor ~}
+
+[all:vars]
 ansible_user=root
 ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new

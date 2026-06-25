@@ -32,3 +32,14 @@ disc_port: 8090
 
 # Readiness log line emitted once the storage node is up.
 ready_marker: "Started Storage node"
+
+# --- Regular Storage (RS) node extras ---
+# Local mix-pool.json copied onto the node and referenced by the RS config.
+mix_pool_file: "{{ logos_home }}/mix-pool.json"
+# Content preloaded onto RS nodes.
+book_url: "https://logos.co/book/farewell-to-westphalia-foss-edition.pdf"
+book_file: "{{ logos_home }}/farewell-to-westphalia-foss-edition.pdf"
+random_file: "{{ logos_home }}/random-200mb.bin"
+random_file_mb: 200
+# uploadUrl buffer size (required positional arg; missing it crashes the node).
+upload_buffer: 65536

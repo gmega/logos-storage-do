@@ -36,6 +36,15 @@ ansible-playbook playbook.yml
 cd "${ROOT}/terraform"
 terraform apply -input=false -auto-approve
 
+# 4. Provision the Regular Storage node(s): build, configure against the MP
+#    artifacts, and preload content. Skipped if no RS nodes are defined.
+if grep -q '^logos-rs' "${ROOT}/ansible/inventory.ini" 2>/dev/null; then
+  cd "${ROOT}/ansible"
+  ansible-playbook rs-playbook.yml
+fi
+
+cd "${ROOT}/terraform"
+
 echo
 echo "=== Mix-Proxy network deployed. Public artifact URLs: ==="
 terraform output -raw mix_pool_url;      echo

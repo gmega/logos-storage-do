@@ -27,6 +27,18 @@ variable "node_count" {
   }
 }
 
+variable "rs_node_count" {
+  description = "Number of Regular Storage (RS) nodes to deploy."
+  type        = number
+  default     = 1
+}
+
+variable "rs_name_prefix" {
+  description = "Prefix for Regular Storage droplet names."
+  type        = string
+  default     = "logos-rs"
+}
+
 variable "ssh_key_name" {
   description = "Name of an SSH key already registered in the DigitalOcean account."
   type        = string

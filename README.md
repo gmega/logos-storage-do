@@ -9,9 +9,13 @@ published to a public DigitalOcean Spaces bucket:
 - `tcp-sprs.txt` / `tcp-sprs.json` — the MP nodes' TCP SPRs (one per node)
 - `udp-sprs.txt` / `udp-sprs.json` — the MP nodes' UDP SPRs (one per node)
 
-These are what the Regular Storage (RS) nodes (stage 2, out of scope here) need
-to route mix queries. See [infra-logos#25](https://github.com/status-im/infra-logos/issues/25)
+These are what the Regular Storage (RS) nodes need to route their queries
+through the mix network. See [infra-logos#25](https://github.com/status-im/infra-logos/issues/25)
 and the [reference harness](https://github.com/gmega/logos-storage-runner).
+
+A Regular Storage node (stage 2) is also deployed: it consumes the MP artifacts
+(mix-pool + the MP TCP SPRs as `dht-mix-proxy`) and is preloaded with content —
+Jarrad's book and a randomly generated 200 MB file (`ansible/rs-playbook.yml`).
 
 ## Architecture
 
@@ -39,8 +43,9 @@ node 1's UDP SPR. All nodes run with `mix-enabled: true` and join the mix pool.
 terraform/        Droplets, firewall, Spaces bucket + object uploads, inventory
   templates/      Ansible inventory template (rendered from droplet data)
 ansible/
-  playbook.yml    5 phases: build → bootstrap → followers → export → merge
-  roles/mp_node/  build / run / export / get_udp_spr tasks + templates
+  playbook.yml    MP: build → bootstrap → followers → export → merge
+  rs-playbook.yml RS: build → configure (mix-pool/dht-mix-proxy) → preload
+  roles/storage_node/  build / run / run_rs / export / preload + templates
   tasks/merge.yml Controller-side merge into the published artifacts
   files/          Vendored mix_helper.py (from the reference harness)
 scripts/
@@ -117,6 +122,27 @@ Public URLs (after the publish apply):
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/tcp-sprs.json`
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/udp-sprs.txt`
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/udp-sprs.json`
+
+## Regular Storage node
+
+`deploy.sh` provisions the RS node(s) automatically after the MP artifacts
+exist. To (re-)run just the RS stage:
+
+```bash
+source scripts/env.sh
+cd ansible && ansible-playbook rs-playbook.yml
+```
+
+It builds the same toolchain, writes an RS `config.json` (`mix-pool` +
+`dht-mix-proxy` from the MP TCP SPRs, bootstrapped off node 1's UDP SPR), starts
+the node, and preloads it with the book + a 200 MB random file via `uploadUrl`.
+The number of RS nodes is `rs_node_count` (default 1) in `terraform.tfvars`.
+Confirm the preloaded content with:
+
+```bash
+ssh root@<rs-ip> '/opt/logos/build/logos/bin/logoscore \
+  --config-dir=/var/lib/logoscore call storage_module manifests' | jq
+```
 
 ## Teardown
 
