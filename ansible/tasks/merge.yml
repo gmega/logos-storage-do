@@ -1,0 +1,48 @@
+---
+# Controller-side: combine the per-node exports (artifacts/raw/<n>/...) into the
+# published artifacts:
+#   - mix-pool.json : merged mix relay pool (all MP nodes)
+#   - tcp-sprs.txt  : newline-delimited TCP SPRs (one per MP node, node order)
+#   - tcp-sprs.json : the same TCP SPRs as a JSON array
+#   - udp-sprs.txt  : newline-delimited UDP SPRs (one per MP node, node order)
+#   - udp-sprs.json : the same UDP SPRs as a JSON array
+
+- name: Build merged artifacts
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      ART="{{ playbook_dir }}/../artifacts"
+      RAW="$ART/raw"
+
+      # Numeric (node) order: raw/1, raw/2, ...
+      mapfile -t mixinfos < <(ls -1 "$RAW"/*/mixinfo.json | sort -V)
+      mapfile -t tcpsprs  < <(ls -1 "$RAW"/*/tcp-spr.txt  | sort -V)
+      mapfile -t udpsprs  < <(ls -1 "$RAW"/*/udp-spr.txt  | sort -V)
+
+      python3 "{{ playbook_dir }}/files/mix_helper.py" merge \
+        "${mixinfos[@]}" --output "$ART/mix-pool.json"
+
+      # TCP SPRs (.txt one-per-line, .json array)
+      : > "$ART/tcp-sprs.txt"
+      for f in "${tcpsprs[@]}"; do cat "$f" >> "$ART/tcp-sprs.txt"; done
+      jq -R -s 'split("\n") | map(select(length > 0))' \
+        "$ART/tcp-sprs.txt" > "$ART/tcp-sprs.json"
+
+      # UDP SPRs (.txt one-per-line, .json array)
+      : > "$ART/udp-sprs.txt"
+      for f in "${udpsprs[@]}"; do cat "$f" >> "$ART/udp-sprs.txt"; done
+      jq -R -s 'split("\n") | map(select(length > 0))' \
+        "$ART/udp-sprs.txt" > "$ART/udp-sprs.json"
+
+      echo "Wrote:"
+      echo "  $ART/mix-pool.json   ($(jq '.relays | length' "$ART/mix-pool.json") relays)"
+      echo "  $ART/tcp-sprs.txt    ($(wc -l < "$ART/tcp-sprs.txt") SPRs)"
+      echo "  $ART/tcp-sprs.json"
+      echo "  $ART/udp-sprs.txt    ($(wc -l < "$ART/udp-sprs.txt") SPRs)"
+      echo "  $ART/udp-sprs.json"
+  register: merge_out
+
+- name: Show merge summary
+  ansible.builtin.debug:
+    var: merge_out.stdout_lines

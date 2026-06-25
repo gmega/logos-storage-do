@@ -1,0 +1,96 @@
+---
+# Installs Nix and builds the Logos toolchain + storage module on a node.
+# These builds compile Nim and can take a while, so the nix steps run async.
+
+- name: Wait for SSH to come up
+  ansible.builtin.wait_for_connection:
+    timeout: 300
+
+- name: Gather facts
+  ansible.builtin.setup:
+
+- name: Install OS prerequisites
+  ansible.builtin.apt:
+    name:
+      - curl
+      - git
+      - jq
+      - xz-utils
+      - ca-certificates
+      - python3
+      - acl
+      - sudo
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create Logos directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ logos_home }}"
+    - "{{ logos_build }}"
+    - "{{ logos_modules }}"
+    - "{{ logos_data_dir }}"
+    - "{{ logos_config_dir }}"
+
+- name: Check whether Nix is installed
+  ansible.builtin.stat:
+    path: "{{ nix_bin }}"
+  register: nix_stat
+
+- name: Install Nix (Determinate Systems installer, flakes enabled)
+  ansible.builtin.shell: >
+    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix
+    | sh -s -- install linux --no-confirm --init systemd
+  args:
+    creates: "{{ nix_bin }}"
+  when: not nix_stat.stat.exists
+
+- name: Ensure nix-daemon is running
+  ansible.builtin.systemd:
+    name: nix-daemon
+    state: started
+    enabled: true
+
+- name: Build the Logos Core CLI (provides logoscore)
+  ansible.builtin.command: >
+    {{ nix_bin }} {{ nix_flags }}
+    build github:logos-co/logos-logoscore-cli/{{ logos_cli_ref }}
+    --out-link {{ logos_build }}/logos
+  args:
+    creates: "{{ logos_bin }}"
+  async: "{{ nix_build_timeout }}"
+  poll: "{{ nix_build_poll }}"
+
+- name: Build the Logos Package Manager (provides lgpm)
+  ansible.builtin.command: >
+    {{ nix_bin }} {{ nix_flags }}
+    build github:logos-co/logos-package-manager/{{ logos_pkgmgr_ref }}#cli
+    --out-link {{ logos_build }}/package-manager
+  args:
+    creates: "{{ lgpm_bin }}"
+  async: "{{ nix_build_timeout }}"
+  poll: "{{ nix_build_poll }}"
+
+- name: Build the Logos Storage Module
+  ansible.builtin.command: >
+    {{ nix_bin }} {{ nix_flags }}
+    build github:logos-co/logos-storage-module/{{ storage_module_ref }}#lgx
+    --override-input logos-storage
+    git+https://github.com/logos-storage/logos-storage-nim?ref={{ libstorage_ref }}&submodules=1
+    --out-link {{ logos_build }}/storage-module
+  args:
+    creates: "{{ logos_build }}/storage-module"
+  async: "{{ nix_build_timeout }}"
+  poll: "{{ nix_build_poll }}"
+
+- name: Install the Storage Module into the modules directory
+  ansible.builtin.command: >
+    {{ lgpm_bin }} --modules-dir {{ logos_modules }}
+    install --dir {{ logos_build }}/storage-module
+  args:
+    creates: "{{ logos_modules }}/storage_module"
+  register: lgpm_install
+  changed_when: "'storage_module' not in (lgpm_install.stdout | default(''))"

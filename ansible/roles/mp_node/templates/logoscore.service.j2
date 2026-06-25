@@ -1,0 +1,17 @@
+[Unit]
+Description=Logos Core daemon (storage module / mix-proxy node)
+After=network-online.target nix-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ logos_bin }} --config-dir={{ logos_config_dir }} -D -m {{ logos_modules }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+# Daemon stdout/stderr is where the storage module logs (incl. the readiness line).
+StandardOutput=append:{{ logos_log }}
+StandardError=append:{{ logos_log }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Managed by Terraform (terraform/main.tf -> local_file.ansible_inventory).
+# Do not edit by hand; re-run `terraform apply` to regenerate.
+
+[mp_nodes]
+%{ for n in nodes ~}
+${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip}
+%{ endfor ~}
+
+[mp_bootstrap]
+%{ for n in nodes ~}
+%{ if n.bootstrap ~}
+${n.name}
+%{ endif ~}
+%{ endfor ~}
+
+[mp_followers]
+%{ for n in nodes ~}
+%{ if !n.bootstrap ~}
+${n.name}
+%{ endif ~}
+%{ endfor ~}
+
+[mp_nodes:vars]
+ansible_user=root
+ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Loads the storage module and starts the node within the running logoscore
+# daemon. Idempotent: guarded by the .node-initialized marker via Ansible.
+set -euo pipefail
+
+LOGOS=("{{ logos_bin }}" "--config-dir={{ logos_config_dir }}")
+
+# Wait until the daemon accepts commands, then load the module.
+loaded=0
+for _ in $(seq 1 30); do
+  if "${LOGOS[@]}" load-module storage_module; then
+    loaded=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$loaded" -ne 1 ]]; then
+  echo "logoscore daemon did not become ready in time" >&2
+  exit 1
+fi
+
+"${LOGOS[@]}" call storage_module init "@{{ logos_config_file }}"
+"${LOGOS[@]}" call storage_module start
+
+# Mark success so Ansible's `creates:` guard skips re-running.
+touch "{{ logos_home }}/.node-initialized"

@@ -1,0 +1,8 @@
+---
+# The playbook (playbook.yml) drives phases across host groups in the right
+# order using `import_role ... tasks_from:`. This main.yml is a convenience
+# entrypoint that runs everything for a single host (requires bootstrap_udp_spr
+# to already be defined for follower nodes).
+- import_tasks: build.yml
+- import_tasks: run.yml
+- import_tasks: export.yml

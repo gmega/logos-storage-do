@@ -1,0 +1,47 @@
+---
+# Renders the node config, starts the logoscore daemon as a systemd service,
+# loads + starts the storage module, and waits for readiness.
+
+- name: Render node config.json
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ logos_config_file }}"
+    mode: "0644"
+  register: config_render
+
+- name: Install logoscore systemd unit
+  ansible.builtin.template:
+    src: logoscore.service.j2
+    dest: /etc/systemd/system/logoscore.service
+    mode: "0644"
+  register: unit_render
+
+- name: Reload systemd if unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: unit_render.changed
+
+- name: Enable and (re)start the logoscore daemon
+  ansible.builtin.systemd:
+    name: logoscore
+    state: "{{ 'restarted' if (unit_render.changed or config_render.changed) else 'started' }}"
+    enabled: true
+
+- name: Install node-init script
+  ansible.builtin.template:
+    src: node-init.sh.j2
+    dest: "{{ logos_home }}/node-init.sh"
+    mode: "0755"
+
+- name: Load module and start the storage node
+  ansible.builtin.command: "{{ logos_home }}/node-init.sh"
+  args:
+    creates: "{{ logos_home }}/.node-initialized"
+
+- name: Wait for the storage node to report ready
+  ansible.builtin.shell: "grep -q '{{ ready_marker }}' {{ logos_log }}"
+  register: ready_check
+  until: ready_check.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false

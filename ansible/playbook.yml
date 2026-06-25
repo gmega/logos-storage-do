@@ -1,0 +1,59 @@
+---
+# Logos Storage v0.2 — Mix-Proxy network provisioning.
+#
+# Phases run in order. The bootstrap node (node 1) must be up before the
+# followers are configured, because followers bootstrap off its UDP SPR.
+
+- name: "Phase 1 — Build Logos toolchain + storage module (all nodes)"
+  hosts: mp_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Build
+      ansible.builtin.import_role:
+        name: mp_node
+        tasks_from: build
+
+- name: "Phase 2 — Start bootstrap node and capture its UDP SPR"
+  hosts: mp_bootstrap
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Run node
+      ansible.builtin.import_role:
+        name: mp_node
+        tasks_from: run
+    - name: Capture UDP SPR
+      ansible.builtin.import_role:
+        name: mp_node
+        tasks_from: get_udp_spr
+
+- name: "Phase 3 — Start follower nodes (bootstrapped off node 1)"
+  hosts: mp_followers
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    bootstrap_udp_spr: "{{ hostvars[groups['mp_bootstrap'][0]].udp_spr }}"
+  tasks:
+    - name: Run node
+      ansible.builtin.import_role:
+        name: mp_node
+        tasks_from: run
+
+- name: "Phase 4 — Export mix info + SPRs from every node"
+  hosts: mp_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Export
+      ansible.builtin.import_role:
+        name: mp_node
+        tasks_from: export
+
+- name: "Phase 5 — Merge artifacts on the controller"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Merge
+      ansible.builtin.import_tasks: tasks/merge.yml

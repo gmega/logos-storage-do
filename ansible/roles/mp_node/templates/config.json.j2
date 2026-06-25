@@ -1,0 +1,14 @@
+{
+  "log-level": "DEBUG",
+  "data-dir": "{{ logos_data_dir }}",
+  "nat": "extip:{{ public_ip }}",
+  "listen-ip": "{{ public_ip }}",
+  "listen-port": {{ listen_port }},
+  "disc-port": {{ disc_port }},
+  "mix-enabled": true,
+{% if inventory_hostname in groups['mp_bootstrap'] %}
+  "no-bootstrap-node": true
+{% else %}
+  "bootstrap-node": ["{{ bootstrap_udp_spr }}"]
+{% endif %}
+}
