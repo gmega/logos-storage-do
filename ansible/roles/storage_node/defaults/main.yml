@@ -30,8 +30,13 @@ libstorage_ref: refs/tags/v0.4.0-rc4
 listen_port: 8080
 disc_port: 8090
 
-# Readiness log line emitted once the storage node is up.
-ready_marker: "Started Storage node"
+# Readiness predicate: the node is only usable once it has announced a discovery
+# record, i.e. `call storage_module debug` returns a non-null .result.value.spr.
+# (A successful debug call alone is not enough; the SPR is null for a moment
+# after start while discovery spins up.) These bound the wait at retries*delay
+# seconds (15 * 2 = 30s).
+spr_ready_retries: 15
+spr_ready_delay: 2
 
 # --- Regular Storage (RS) node extras ---
 # Local mix-pool.json copied onto the node and referenced by the RS config.

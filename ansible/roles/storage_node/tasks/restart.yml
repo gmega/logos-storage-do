@@ -1,0 +1,24 @@
+---
+# Restarts the logoscore daemon and waits until the node is serving again.
+# The unit's ExecStartPost (node-init.sh) re-loads/init/starts the storage
+# module on boot; here we gate on the same predicate it uses — a non-null
+# discovery SPR from `debug` — rather than the append-only log (whose previous
+# "Started Storage node" line survives a restart) or a bare debug return code.
+
+- name: Restart the logoscore daemon
+  ansible.builtin.systemd:
+    name: logoscore
+    state: restarted
+
+- name: Wait for the storage node to announce an SPR
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }}
+    call storage_module debug | grep -q '"spr":"spr:'
+  args:
+    executable: /bin/bash
+  register: ready_check
+  until: ready_check.rc == 0
+  retries: "{{ spr_ready_retries }}"
+  delay: "{{ spr_ready_delay }}"
+  changed_when: false

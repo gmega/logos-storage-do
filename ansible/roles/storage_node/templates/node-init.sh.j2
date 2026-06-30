@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Loads the storage module and starts the node within the running logoscore
-# daemon. Idempotent: guarded by the .node-initialized marker via Ansible.
+# Loads the storage module, initializes and starts the node within the running
+# logoscore daemon, then waits until the node has actually announced a discovery
+# record. Run both at deploy time and as the systemd unit's ExecStartPost, so a
+# plain `systemctl restart` fully restores a serving node.
 set -euo pipefail
 
 LOGOS=("{{ logos_bin }}" "--config-dir={{ logos_config_dir }}")
@@ -21,6 +23,23 @@ fi
 
 "${LOGOS[@]}" call storage_module init "@{{ logos_config_file }}"
 "${LOGOS[@]}" call storage_module start
+
+# Readiness predicate (mirrors the reference harness' sto_get_spr): a successful
+# `debug` call is NOT enough — the node is only usable once it has computed and
+# announced its discovery record, i.e. debug's .result.value.spr is non-null.
+# This also catches a failed init/start, which return rc 0 with "result":false.
+ready=0
+for _ in $(seq 1 {{ spr_ready_retries }}); do
+  if "${LOGOS[@]}" call storage_module debug | grep -q '"spr":"spr:'; then
+    ready=1
+    break
+  fi
+  sleep {{ spr_ready_delay }}
+done
+if [[ "$ready" -ne 1 ]]; then
+  echo "storage node did not announce an SPR in time" >&2
+  exit 1
+fi
 
 # Mark success so Ansible's `creates:` guard skips re-running.
 touch "{{ logos_home }}/.node-initialized"

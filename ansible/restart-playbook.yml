@@ -1,0 +1,39 @@
+---
+# Logos Storage v0.2 — ordered restart of the running network.
+#
+# Order matters: the bootstrap node must be up before the followers and the
+# RS node restart, since they all bootstrap off its DHT.
+#   1. mp_bootstrap  (logos-mp-1)
+#   2. mp_followers  (logos-mp-2..4), one at a time
+#   3. rs_nodes      (logos-rs-1)
+
+- name: "Restart bootstrap node"
+  hosts: mp_bootstrap
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Restart
+      ansible.builtin.import_role:
+        name: storage_node
+        tasks_from: restart
+
+- name: "Restart follower nodes"
+  hosts: mp_followers
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  tasks:
+    - name: Restart
+      ansible.builtin.import_role:
+        name: storage_node
+        tasks_from: restart
+
+- name: "Restart RS node(s)"
+  hosts: rs_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Restart
+      ansible.builtin.import_role:
+        name: storage_node
+        tasks_from: restart

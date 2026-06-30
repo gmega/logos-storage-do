@@ -42,15 +42,7 @@
     dest: "{{ logos_home }}/node-init.sh"
     mode: "0755"
 
-- name: Load module and start the storage node
+- name: Load, start and wait for the storage node to announce an SPR
   ansible.builtin.command: "{{ logos_home }}/node-init.sh"
   args:
     creates: "{{ logos_home }}/.node-initialized"
-
-- name: Wait for the storage node to report ready
-  ansible.builtin.shell: "grep -q '{{ ready_marker }}' {{ logos_log }}"
-  register: ready_check
-  until: ready_check.rc == 0
-  retries: 30
-  delay: 5
-  changed_when: false

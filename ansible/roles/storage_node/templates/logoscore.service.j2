@@ -6,6 +6,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart={{ logos_bin }} --config-dir={{ logos_config_dir }} -D -m {{ logos_modules }}
+# Load + init + start the storage module into the freshly-started daemon, so a
+# plain `systemctl restart` fully restores the node (the module is runtime state,
+# not something the daemon restores on its own).
+ExecStartPost={{ logos_home }}/node-init.sh
+# ExecStartPost waits for the node to announce an SPR (up to spr_ready_retries *
+# spr_ready_delay s); give the whole start enough headroom so systemd doesn't
+# kill the wait at its 90s default.
+TimeoutStartSec=300
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
