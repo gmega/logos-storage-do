@@ -40,9 +40,9 @@ variable "rs_name_prefix" {
 }
 
 variable "ssh_key_name" {
-  description = "Name of an SSH key already registered in the DigitalOcean account."
+  description = "Name of an SSH key already registered in the DigitalOcean account. The matching private key must be usable unattended by Ansible (see ansible/ansible.cfg private_key_file)."
   type        = string
-  default     = "giulianos-public-key"
+  default     = "giulianos-public-key-2"
 }
 
 variable "bucket_name" {

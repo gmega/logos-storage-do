@@ -20,8 +20,7 @@ source "${HERE}/env.sh"
 
 # Ansible lives in a dedicated conda env (never installed globally).
 # shellcheck disable=SC1091
-source "${HOME}/anaconda3/etc/profile.d/conda.sh"
-conda activate logos-storage-do
+source "${HERE}/conda.sh"
 
 # 1. Infrastructure: droplets + firewall + bucket + Ansible inventory.
 cd "${ROOT}/terraform"

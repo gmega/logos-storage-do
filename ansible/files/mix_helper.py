@@ -25,7 +25,7 @@ def merge(pool1: MixPool, pool2: MixPool) -> MixPool:
 
 def as_mix_info(wrapped_debug_info: Dict) -> MixInfo:
   debug_info = wrapped_debug_info['result']['value']
-  multi_addrs = debug_info['announceAddresses']
+  multi_addrs = debug_info['providerAddresses']
   if len(multi_addrs) > 1:
     print("WARNING: multiple addresses found, using first one", file=sys.stderr)
 

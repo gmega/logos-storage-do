@@ -18,6 +18,14 @@
     mode: "0644"
   register: config_render
 
+# Must exist before the unit is started: it is the unit's ExecStartPost, and a
+# missing script fails the whole service start with 203/EXEC.
+- name: Install node-init script
+  ansible.builtin.template:
+    src: node-init.sh.j2
+    dest: "{{ logos_home }}/node-init.sh"
+    mode: "0755"
+
 - name: Install logoscore systemd unit
   ansible.builtin.template:
     src: logoscore.service.j2
@@ -35,12 +43,6 @@
     name: logoscore
     state: "{{ 'restarted' if (unit_render.changed or config_render.changed) else 'started' }}"
     enabled: true
-
-- name: Install node-init script
-  ansible.builtin.template:
-    src: node-init.sh.j2
-    dest: "{{ logos_home }}/node-init.sh"
-    mode: "0755"
 
 - name: Load, start and wait for the storage node to announce an SPR
   ansible.builtin.command: "{{ logos_home }}/node-init.sh"

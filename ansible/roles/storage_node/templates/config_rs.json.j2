@@ -6,6 +6,8 @@
   "listen-port": {{ listen_port }},
   "disc-port": {{ disc_port }},
   "mix-enabled": true,
+  "autonat-server": true,
+  "relay-server": true,
   "bootstrap-node": ["{{ bootstrap_udp_spr }}"],
   "mix-pool": "{{ mix_pool_file }}",
   "dht-mix-proxy": {{ dht_mix_proxy | to_json }}

@@ -18,8 +18,7 @@ fi
 
 # Ansible lives in a dedicated conda env (never installed globally).
 # shellcheck disable=SC1091
-source "${HOME}/anaconda3/etc/profile.d/conda.sh"
-conda activate logos-storage-do
+source "${HERE}/conda.sh"
 
 cd "${ROOT}/ansible"
 ansible-playbook -i inventory.ini restart-playbook.yml

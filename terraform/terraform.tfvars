@@ -5,6 +5,6 @@ region       = "fra1"
 droplet_size = "s-8vcpu-16gb"
 image        = "ubuntu-24-04-x64"
 node_count   = 4
-ssh_key_name = "giulianos-public-key"
+ssh_key_name = "giulianos-public-key-2"
 bucket_name  = "logos-storage-network"
 name_prefix  = "logos-mp"

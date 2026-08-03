@@ -59,16 +59,23 @@ artifacts/        Generated at deploy time (gitignored)
 ## Prerequisites
 
 - `DO_TOKEN` exported (DigitalOcean API token) — already present in this shell.
-- SSH key **`giulianos-public-key`** registered in the DO account, with the
-  matching private key at `~/.ssh/id_ed25519` (used by Ansible).
+- SSH key **`giulianos-public-key-2`** registered in the DO account, with the
+  matching private key at `~/.ssh/id_ed25519-2` (used by Ansible).
 - `terraform`, `doctl`, and `jq` on PATH (`doctl` creates the Spaces key).
 - A conda env with Ansible (kept out of the global/base env):
 
   ```bash
-  conda create -y -n logos-storage-do python=3.12
+  # conda-forge avoids the Anaconda channel ToS prompt.
+  conda create -y -n logos-storage-do -c conda-forge --override-channels python=3.12
   conda activate logos-storage-do
   pip install "ansible-core>=2.16"
+  # Provides the log_plays callback (ansible.cfg) that writes logs/<host>.
+  ansible-galaxy collection install community.general
   ```
+
+  `scripts/conda.sh` finds the conda install (`$CONDA_EXE`, `~/miniconda3`,
+  `~/anaconda3`, `~/miniforge3`, `~/mambaforge`, `/opt/conda`) and activates
+  that env; `deploy.sh` and `restart.sh` source it.
 
 ## Configuration
 
@@ -80,7 +87,7 @@ bucket name, or version prefix. Defaults:
 | `region`        | `fra1`                   |
 | `droplet_size`  | `s-4vcpu-8gb`            |
 | `node_count`    | `4`                      |
-| `ssh_key_name`  | `giulianos-public-key`   |
+| `ssh_key_name`  | `giulianos-public-key-2` |
 | `bucket_name`   | `logos-storage-network`  |
 | `version_prefix`| `v0.2`                   |
 

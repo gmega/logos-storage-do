@@ -6,6 +6,8 @@
   "listen-port": {{ listen_port }},
   "disc-port": {{ disc_port }},
   "mix-enabled": true,
+  "autonat-server": true,
+  "relay-server": true,
 {% if inventory_hostname in groups['mp_bootstrap'] %}
   "no-bootstrap-node": true
 {% else %}

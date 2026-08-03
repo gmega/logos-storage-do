@@ -23,8 +23,8 @@ nix_build_poll: 30
 # Component versions (from infra-logos#25 / logos-storage-runner).
 logos_cli_ref: master
 logos_pkgmgr_ref: master
-storage_module_ref: v1.2.0
-libstorage_ref: refs/tags/v0.4.0-rc4
+storage_module_ref: master
+libstorage_ref: refs/tags/v0.4.2-rc1
 
 # Network ports (must match the Terraform firewall rules).
 listen_port: 8080
