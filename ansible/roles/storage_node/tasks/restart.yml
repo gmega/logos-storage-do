@@ -14,7 +14,8 @@
   ansible.builtin.shell: >-
     set -o pipefail;
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
-    call storage_module debug | grep -q '"spr":"spr:'
+    call storage_module debug |
+    jq --exit-status '.result.value.spr | strings | startswith("spr:")' > /dev/null
   args:
     executable: /bin/bash
   register: ready_check

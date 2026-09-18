@@ -80,17 +80,54 @@
     build github:logos-co/logos-storage-module/{{ storage_module_ref }}#lgx
     --override-input logos-storage
     git+https://github.com/logos-storage/logos-storage-nim?ref={{ libstorage_ref }}&submodules=1
+    --refresh --print-out-paths
     --out-link {{ logos_build }}/storage-module
-  args:
-    creates: "{{ logos_build }}/storage-module"
   async: "{{ nix_build_timeout }}"
   poll: "{{ nix_build_poll }}"
+  register: storage_module_build
+  changed_when: false
+
+# Compare the actual Nix output, so changing either ref (or advancing a branch)
+# replaces the installed module. A directory-exists guard would skip upgrades.
+- name: Read the previously installed module build
+  ansible.builtin.command: "cat {{ logos_home }}/.storage-module-build"
+  register: installed_module_build
+  failed_when: false
+  changed_when: false
+
+- name: Check the installed module
+  ansible.builtin.stat:
+    path: "{{ logos_modules }}/storage_module"
+  register: installed_module
+
+- name: Determine whether the module needs installing
+  ansible.builtin.set_fact:
+    storage_module_changed: >-
+      {{ not installed_module.stat.exists or
+         (installed_module_build.stdout | trim) != (storage_module_build.stdout | trim) }}
+
+- name: Gather service state before replacing the module
+  ansible.builtin.service_facts:
+  when: storage_module_changed
+
+- name: Stop the daemon before replacing its loaded libraries
+  ansible.builtin.systemd:
+    name: logoscore
+    state: stopped
+  when:
+    - storage_module_changed
+    - "'logoscore.service' in ansible_facts.services"
 
 - name: Install the Storage Module into the modules directory
   ansible.builtin.command: >
     {{ lgpm_bin }} --modules-dir {{ logos_modules }}
     install --dir {{ logos_build }}/storage-module
-  args:
-    creates: "{{ logos_modules }}/storage_module"
+  when: storage_module_changed
   register: lgpm_install
-  changed_when: "'storage_module' not in (lgpm_install.stdout | default(''))"
+
+- name: Record the installed module build
+  ansible.builtin.copy:
+    content: "{{ storage_module_build.stdout | trim }}\n"
+    dest: "{{ logos_home }}/.storage-module-build"
+    mode: "0644"
+  when: storage_module_changed

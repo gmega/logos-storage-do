@@ -4,13 +4,12 @@
   "nat": "extip:{{ public_ip }}",
   "listen-ip": "{{ public_ip }}",
   "listen-port": {{ listen_port }},
-  "disc-port": {{ disc_port }},
   "mix-enabled": true,
   "autonat-server": true,
   "relay-server": true,
 {% if inventory_hostname in groups['mp_bootstrap'] %}
   "no-bootstrap-node": true
 {% else %}
-  "bootstrap-node": ["{{ bootstrap_udp_spr }}"]
+  "bootstrap-node": ["{{ bootstrap_tcp_spr }}"]
 {% endif %}
 }

@@ -30,7 +30,8 @@ fi
 # This also catches a failed init/start, which return rc 0 with "result":false.
 ready=0
 for _ in $(seq 1 {{ spr_ready_retries }}); do
-  if "${LOGOS[@]}" call storage_module debug | grep -q '"spr":"spr:'; then
+  if "${LOGOS[@]}" call storage_module debug |
+    jq --exit-status '.result.value.spr | strings | startswith("spr:")' >/dev/null; then
     ready=1
     break
   fi

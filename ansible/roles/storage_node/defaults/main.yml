@@ -14,21 +14,21 @@ logos_log: /var/log/logoscore.log
 
 # Nix (Determinate Systems installer puts nix here, with flakes enabled).
 nix_bin: /nix/var/nix/profiles/default/bin/nix
-nix_flags: --extra-experimental-features "nix-command flakes"
+# Limit parallel builds and compiler jobs to avoid exhausting the nodes' 16 GB RAM.
+nix_flags: --extra-experimental-features "nix-command flakes" --max-jobs 1 --cores 2
 # Max seconds a single Nix build may run before Ansible gives up. Cold Nim/
 # libp2p compilation is slow, so this is deliberately generous (4 hours).
 nix_build_timeout: 14400
 nix_build_poll: 30
 
-# Component versions (from infra-logos#25 / logos-storage-runner).
+# Component versions. libstorage_ref accepts a branch or a full tag ref.
 logos_cli_ref: master
 logos_pkgmgr_ref: master
-storage_module_ref: master
-libstorage_ref: refs/tags/v0.4.2-rc1
+storage_module_ref: v2.1.3
+libstorage_ref: feat/mix-transport
 
 # Network ports (must match the Terraform firewall rules).
 listen_port: 8080
-disc_port: 8090
 
 # Readiness predicate: the node is only usable once it has announced a discovery
 # record, i.e. `call storage_module debug` returns a non-null .result.value.spr.

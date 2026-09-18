@@ -30,7 +30,7 @@ variable "node_count" {
 variable "rs_node_count" {
   description = "Number of Regular Storage (RS) nodes to deploy."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "rs_name_prefix" {

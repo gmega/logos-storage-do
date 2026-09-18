@@ -42,6 +42,11 @@ if grep -q '^logos-rs' "${ROOT}/ansible/inventory.ini" 2>/dev/null; then
   ansible-playbook rs-playbook.yml
 fi
 
+# 5. Check node health, public artifacts, and an RS-to-RS network download.
+cd "${ROOT}/ansible"
+mix_pool_url="$(terraform -chdir="${ROOT}/terraform" output -raw mix_pool_url)"
+ansible-playbook verify-playbook.yml -e "artifact_url=${mix_pool_url%/mix-pool.json}"
+
 cd "${ROOT}/terraform"
 
 echo
@@ -49,5 +54,3 @@ echo "=== Mix-Proxy network deployed. Public artifact URLs: ==="
 terraform output -raw mix_pool_url;      echo
 terraform output -raw tcp_sprs_txt_url;  echo
 terraform output -raw tcp_sprs_json_url; echo
-terraform output -raw udp_sprs_txt_url;  echo
-terraform output -raw udp_sprs_json_url; echo

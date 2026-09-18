@@ -1,0 +1,66 @@
+---
+- name: Prepare a 1 MiB sample unique to the first RS node
+  ansible.builtin.command: >-
+    dd if={{ random_file }} of={{ logos_home }}/verify-source.bin bs=1M count=1
+  when: inventory_hostname == groups['rs_nodes'][0]
+
+- name: Upload the verification sample
+  ansible.builtin.command: >-
+    {{ logos_bin }} --config-dir={{ logos_config_dir }}
+    call storage_module uploadUrl {{ logos_home }}/verify-source.bin {{ upload_buffer }}
+  when: inventory_hostname == groups['rs_nodes'][0]
+
+- name: Wait for the verification sample manifest
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests |
+    jq --exit-status --raw-output
+    '.result.value[] | select(.filename == "verify-source.bin") | .cid'
+  args:
+    executable: /bin/bash
+  register: transfer_cid
+  until: transfer_cid.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
+  when: inventory_hostname == groups['rs_nodes'][0]
+
+- name: Hash the source sample
+  ansible.builtin.stat:
+    path: "{{ logos_home }}/verify-source.bin"
+    checksum_algorithm: sha256
+  register: transfer_source
+  when: inventory_hostname == groups['rs_nodes'][0]
+
+- name: Download the source CID through the storage network
+  ansible.builtin.command:
+    argv:
+      - "{{ logos_bin }}"
+      - "--config-dir={{ logos_config_dir }}"
+      - call
+      - storage_module
+      - downloadToUrl
+      - "{{ hostvars[groups['rs_nodes'][0]].transfer_cid.stdout | trim }}"
+      - "{{ logos_home }}/verify-transfer.bin"
+      - "false"
+      - "{{ upload_buffer | string }}"
+  register: transfer_download
+  failed_when: not (transfer_download.stdout | from_json).result.success
+  until: (transfer_download.stdout | from_json).result.success
+  retries: 12
+  delay: 5
+  when: inventory_hostname == groups['rs_nodes'][1]
+
+# Downloads are asynchronous: a successful API response only starts the job.
+- name: Wait for downloaded bytes to match the source SHA-256
+  ansible.builtin.stat:
+    path: "{{ logos_home }}/verify-transfer.bin"
+    checksum_algorithm: sha256
+  register: transfer_destination
+  until: >-
+    transfer_destination.stat.exists and
+    (transfer_destination.stat.checksum | default('')) ==
+    hostvars[groups['rs_nodes'][0]].transfer_source.stat.checksum
+  retries: 120
+  delay: 5
+  when: inventory_hostname == groups['rs_nodes'][1]

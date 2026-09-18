@@ -4,7 +4,7 @@ output "droplet_ips" {
 }
 
 output "bootstrap_node" {
-  description = "The node whose UDP SPR bootstraps the rest of the network."
+  description = "The node whose TCP SPR bootstraps the rest of the network."
   value       = digitalocean_droplet.mp[0].name
 }
 
@@ -36,14 +36,4 @@ output "tcp_sprs_txt_url" {
 output "tcp_sprs_json_url" {
   description = "Public URL for the JSON TCP SPR list (available after the publish apply)."
   value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.tcp_json_key}"
-}
-
-output "udp_sprs_txt_url" {
-  description = "Public URL for the newline-delimited UDP SPR list (available after the publish apply)."
-  value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.udp_spr_key}"
-}
-
-output "udp_sprs_json_url" {
-  description = "Public URL for the JSON UDP SPR list (available after the publish apply)."
-  value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.udp_json_key}"
 }

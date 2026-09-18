@@ -7,16 +7,12 @@ locals {
   mix_pool_key = "${local.key_prefix}mix-pool.json"
   tcp_spr_key  = "${local.key_prefix}tcp-sprs.txt"
   tcp_json_key = "${local.key_prefix}tcp-sprs.json"
-  udp_spr_key  = "${local.key_prefix}udp-sprs.txt"
-  udp_json_key = "${local.key_prefix}udp-sprs.json"
 
   # Local artifact files (flat) that Ansible drops; uploaded under the prefixed keys above.
   artifacts = {
     mix_pool = "${path.module}/${var.artifacts_dir}/mix-pool.json"
     tcp_txt  = "${path.module}/${var.artifacts_dir}/tcp-sprs.txt"
     tcp_json = "${path.module}/${var.artifacts_dir}/tcp-sprs.json"
-    udp_txt  = "${path.module}/${var.artifacts_dir}/udp-sprs.txt"
-    udp_json = "${path.module}/${var.artifacts_dir}/udp-sprs.json"
   }
 }
 
@@ -52,8 +48,7 @@ resource "digitalocean_droplet" "rs" {
   resize_disk = false
 }
 
-# Cloud firewall: SSH for provisioning, libp2p TCP listen port, UDP discovery
-# port. Everything else is denied inbound; all egress allowed. Covers MP + RS.
+# Cloud firewall: SSH and libp2p/KadDHT TCP. All egress allowed. Covers MP + RS.
 resource "digitalocean_firewall" "mp" {
   name        = "${var.name_prefix}-fw"
   droplet_ids = concat(digitalocean_droplet.mp[*].id, digitalocean_droplet.rs[*].id)
@@ -67,12 +62,6 @@ resource "digitalocean_firewall" "mp" {
   inbound_rule {
     protocol         = "tcp"
     port_range       = "8080"
-    source_addresses = ["0.0.0.0/0", "::/0"]
-  }
-
-  inbound_rule {
-    protocol         = "udp"
-    port_range       = "8090"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
@@ -168,30 +157,6 @@ resource "digitalocean_spaces_bucket_object" "tcp_sprs_json" {
   key          = local.tcp_json_key
   source       = local.artifacts.tcp_json
   etag         = filemd5(local.artifacts.tcp_json)
-  acl          = "public-read"
-  content_type = "application/json"
-}
-
-resource "digitalocean_spaces_bucket_object" "udp_sprs_txt" {
-  count = fileexists(local.artifacts.udp_txt) ? 1 : 0
-
-  region       = var.region
-  bucket       = digitalocean_spaces_bucket.artifacts.name
-  key          = local.udp_spr_key
-  source       = local.artifacts.udp_txt
-  etag         = filemd5(local.artifacts.udp_txt)
-  acl          = "public-read"
-  content_type = "text/plain"
-}
-
-resource "digitalocean_spaces_bucket_object" "udp_sprs_json" {
-  count = fileexists(local.artifacts.udp_json) ? 1 : 0
-
-  region       = var.region
-  bucket       = digitalocean_spaces_bucket.artifacts.name
-  key          = local.udp_json_key
-  source       = local.artifacts.udp_json
-  etag         = filemd5(local.artifacts.udp_json)
   acl          = "public-read"
   content_type = "application/json"
 }

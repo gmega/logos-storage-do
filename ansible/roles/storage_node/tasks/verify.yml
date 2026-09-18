@@ -1,0 +1,57 @@
+---
+- name: Check the daemon is active
+  ansible.builtin.command: systemctl is-active logoscore
+  changed_when: false
+
+- name: Check the public TCP port is reachable from the controller
+  ansible.builtin.wait_for:
+    host: "{{ public_ip }}"
+    port: "{{ listen_port }}"
+    timeout: 30
+  delegate_to: localhost
+
+- name: Check the installed module version
+  ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module moduleVersion"
+  register: module_version
+  changed_when: false
+  failed_when: (module_version.stdout | from_json).result != (storage_module_ref | regex_replace('^v', ''))
+
+- name: Wait for TCP address and populated DHT routing table
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug |
+    jq --exit-status '.result.value |
+    (.spr | startswith("spr:")) and
+    (.addrs | any(test("/tcp/{{ listen_port }}(/|$)"))) and
+    (.table.nodes | length > 0) and
+    (.mixPubKey != null)'
+  args:
+    executable: /bin/bash
+  register: node_health
+  until: node_health.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Confirm private queries are enabled on RS nodes
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug |
+    jq --exit-status '.result.value.privateQueries == true'
+  args:
+    executable: /bin/bash
+  when: inventory_hostname in groups['rs_nodes']
+  changed_when: false
+
+- name: Capture the running storage revision
+  ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug"
+  register: verified_debug
+  changed_when: false
+
+- name: Record the running storage revision
+  ansible.builtin.set_fact:
+    storage_revision: "{{ (verified_debug.stdout | from_json).result.value.storage.revision }}"
+
+- name: Show the running storage revision
+  ansible.builtin.debug:
+    var: storage_revision

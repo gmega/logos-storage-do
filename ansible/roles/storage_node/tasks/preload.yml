@@ -21,6 +21,19 @@
     creates: "{{ logos_home }}/.book-uploaded"
   register: upload_book
 
+- name: Wait for the book upload to finish
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests |
+    jq --exit-status '.result.value | any(.filename == "{{ book_file | basename }}")'
+  args:
+    executable: /bin/bash
+  register: book_ready
+  until: book_ready.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
+
 - name: Mark book uploaded
   ansible.builtin.file:
     path: "{{ logos_home }}/.book-uploaded"
@@ -35,6 +48,20 @@
   args:
     creates: "{{ logos_home }}/.random-uploaded"
   register: upload_random
+
+- name: Wait for the random file upload to finish
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests |
+    jq --exit-status '.result.value | any(.filename == "{{ random_file | basename }}"
+    and .datasetSize == {{ (random_file_mb | int) * 1024 * 1024 }})'
+  args:
+    executable: /bin/bash
+  register: random_ready
+  until: random_ready.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
 
 - name: Mark random file uploaded
   ansible.builtin.file:
