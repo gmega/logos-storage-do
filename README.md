@@ -1,6 +1,6 @@
-# Logos Storage v0.2 — Mix-Proxy network on DigitalOcean
+# Logos Storage v0.3 — Mix-Proxy network on DigitalOcean
 
-Deploys the **Mix-Proxy (MP) network** for Logos Storage v0.2: four MP nodes,
+Deploys the **Mix-Proxy (MP) network** for Logos Storage v0.3: four MP nodes,
 one DigitalOcean droplet each, managed with **Terraform** and provisioned with
 **Ansible**. After the network is up, the two global config artifacts are
 published to a public DigitalOcean Spaces bucket:
