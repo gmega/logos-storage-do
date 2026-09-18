@@ -1,6 +1,6 @@
 ---
 # Exports per-node mix info and SPRs, then fetches them back to the controller.
-# Controller layout: artifacts/raw/<index>/{mixinfo.json,tcp-spr.txt,udp-spr.txt}
+# Controller layout: artifacts/raw/<index>/{mixinfo.json,tcp-spr.txt}
 
 - name: Copy mix_helper.py to the node
   ansible.builtin.copy:
@@ -26,22 +26,11 @@
     --output {{ logos_home }}/mixinfo.json
   changed_when: false
 
-- name: Extract UDP SPR
-  ansible.builtin.shell: "jq --raw-output .result.value.spr {{ logos_home }}/debug.json > {{ logos_home }}/udp-spr.txt"
+- name: Extract TCP SPR
+  ansible.builtin.shell: >-
+    jq --exit-status --raw-output '.result.value.spr | select(type == "string" and startswith("spr:"))'
+    {{ logos_home }}/debug.json > {{ logos_home }}/tcp-spr.txt
   changed_when: false
-
-- name: Extract TCP SPR (providerRecord)
-  ansible.builtin.shell: "jq --raw-output .result.value.providerRecord {{ logos_home }}/debug.json > {{ logos_home }}/tcp-spr.txt"
-  changed_when: false
-
-- name: Register UDP SPR as a host fact (used to bootstrap followers)
-  ansible.builtin.command: "cat {{ logos_home }}/udp-spr.txt"
-  register: udp_spr_out
-  changed_when: false
-
-- name: Set udp_spr fact
-  ansible.builtin.set_fact:
-    udp_spr: "{{ udp_spr_out.stdout | trim }}"
 
 - name: Fetch mixinfo.json to controller
   ansible.builtin.fetch:
@@ -53,10 +42,4 @@
   ansible.builtin.fetch:
     src: "{{ logos_home }}/tcp-spr.txt"
     dest: "{{ playbook_dir }}/../artifacts/raw/{{ node_index }}/tcp-spr.txt"
-    flat: true
-
-- name: Fetch UDP SPR to controller
-  ansible.builtin.fetch:
-    src: "{{ logos_home }}/udp-spr.txt"
-    dest: "{{ playbook_dir }}/../artifacts/raw/{{ node_index }}/udp-spr.txt"
     flat: true

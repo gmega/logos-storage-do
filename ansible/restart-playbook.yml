@@ -5,7 +5,7 @@
 # RS node restart, since they all bootstrap off its DHT.
 #   1. mp_bootstrap  (logos-mp-1)
 #   2. mp_followers  (logos-mp-2..4), one at a time
-#   3. rs_nodes      (logos-rs-1)
+#   3. rs_nodes      (logos-rs-1..2)
 
 - name: "Restart bootstrap node"
   hosts: mp_bootstrap
@@ -28,7 +28,7 @@
         name: storage_node
         tasks_from: restart
 
-- name: "Restart RS node(s)"
+- name: "Restart RS nodes"
   hosts: rs_nodes
   gather_facts: false
   any_errors_fatal: true

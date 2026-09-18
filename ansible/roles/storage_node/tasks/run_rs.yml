@@ -2,7 +2,7 @@
 # Configures and starts a Regular Storage (RS) node: it USES the mix network
 # (mix-pool + dht-mix-proxy) to anonymize its queries, rather than relaying it.
 # Expects these play vars (sourced from the controller's artifacts/):
-#   bootstrap_udp_spr : node 1's UDP SPR
+#   bootstrap_tcp_spr : node 1's TCP SPR
 #   dht_mix_proxy     : list of the MP nodes' TCP SPRs
 
 - name: Copy mix-pool.json to the node

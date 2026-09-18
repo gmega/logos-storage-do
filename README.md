@@ -7,13 +7,12 @@ published to a public DigitalOcean Spaces bucket:
 
 - `mix-pool.json` — merged mix relay pool (all MP nodes)
 - `tcp-sprs.txt` / `tcp-sprs.json` — the MP nodes' TCP SPRs (one per node)
-- `udp-sprs.txt` / `udp-sprs.json` — the MP nodes' UDP SPRs (one per node)
 
 These are what the Regular Storage (RS) nodes need to route their queries
 through the mix network. See [infra-logos#25](https://github.com/status-im/infra-logos/issues/25)
 and the [reference harness](https://github.com/gmega/logos-storage-runner).
 
-A Regular Storage node (stage 2) is also deployed: it consumes the MP artifacts
+Two Regular Storage nodes (stage 2) are also deployed: each consumes the MP artifacts
 (mix-pool + the MP TCP SPRs as `dht-mix-proxy`) and is preloaded with content —
 Jarrad's book and a randomly generated 200 MB file (`ansible/rs-playbook.yml`).
 
@@ -23,7 +22,7 @@ Jarrad's book and a randomly generated 200 MB file (`ansible/rs-playbook.yml`).
               Terraform                         Ansible
   ┌─────────────────────────────┐   ┌────────────────────────────────────┐
   │ 4x droplet (fra1, 4vcpu/8gb) │   │ build logoscore + lgpm + storage   │
-  │ cloud firewall 22,8080,8090  │──▶│ module (Nix), run logoscore daemon │
+  │ cloud firewall 22,8080       │──▶│ module (Nix), run logoscore daemon │
   │ Spaces bucket                │   │ as systemd service, start MP node  │
   │ -> ansible/inventory.ini     │   │ export mix info + SPRs             │
   └─────────────────────────────┘   └────────────────┬───────────────────┘
@@ -35,7 +34,7 @@ Jarrad's book and a randomly generated 200 MB file (`ansible/rs-playbook.yml`).
 ```
 
 Node 1 is the bootstrap (`no-bootstrap-node: true`); nodes 2–4 bootstrap off
-node 1's UDP SPR. All nodes run with `mix-enabled: true` and join the mix pool.
+node 1's TCP SPR. All nodes run with `mix-enabled: true` and join the mix pool.
 
 ## Repo layout
 
@@ -45,6 +44,7 @@ terraform/        Droplets, firewall, Spaces bucket + object uploads, inventory
 ansible/
   playbook.yml    MP: build → bootstrap → followers → export → merge
   rs-playbook.yml RS: build → configure (mix-pool/dht-mix-proxy) → preload
+  verify-playbook.yml Service/version/DHT checks, public artifacts, RS transfer
   roles/storage_node/  build / run / run_rs / export / preload + templates
   tasks/merge.yml Controller-side merge into the published artifacts
   files/          Vendored mix_helper.py (from the reference harness)
@@ -91,6 +91,11 @@ bucket name, or version prefix. Defaults:
 | `bucket_name`   | `logos-storage-network`  |
 | `version_prefix`| `v0.2`                   |
 
+Set `storage_module_ref` and `libstorage_ref` in
+`ansible/roles/storage_node/defaults/main.yml` to select the module release and
+its logos-storage dependency branch (or full tag ref). The Nix build overrides
+the module’s `logos-storage` input, including submodules.
+
 Published object keys are namespaced under the version prefix, e.g.
 `v0.2/mix-pool.json`.
 
@@ -116,6 +121,12 @@ cd ../terraform && terraform apply                       # publish artifacts
 > cache (tens of minutes per node, run in parallel). The Ansible build step
 > allows up to 4h per build (`nix_build_timeout`).
 
+Deployment finishes by verifying services, module versions, TCP addresses, DHT
+peers, and public artifacts. With at least two RS nodes, it also downloads the
+first RS node's 1 MiB verification sample on the second and compares SHA-256 hashes.
+Both RS nodes must have private queries enabled. The downloaded verification
+file is saved as `/opt/logos/verify-transfer.bin` on the second RS node.
+
 ## Result
 
 ```bash
@@ -127,8 +138,6 @@ Public URLs (after the publish apply):
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/mix-pool.json`
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/tcp-sprs.txt`
 - `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/tcp-sprs.json`
-- `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/udp-sprs.txt`
-- `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/udp-sprs.json`
 
 ## Regular Storage node
 
@@ -141,9 +150,9 @@ cd ansible && ansible-playbook rs-playbook.yml
 ```
 
 It builds the same toolchain, writes an RS `config.json` (`mix-pool` +
-`dht-mix-proxy` from the MP TCP SPRs, bootstrapped off node 1's UDP SPR), starts
+`dht-mix-proxy` from the MP TCP SPRs, bootstrapped off node 1's TCP SPR), starts
 the node, and preloads it with the book + a 200 MB random file via `uploadUrl`.
-The number of RS nodes is `rs_node_count` (default 1) in `terraform.tfvars`.
+The number of RS nodes is `rs_node_count` (default 2) in `terraform.tfvars`.
 Confirm the preloaded content with:
 
 ```bash
@@ -162,14 +171,14 @@ scripts/destroy.sh --delete-key   # also delete the minted Spaces key
 ## Notes & assumptions
 
 - **Versions** (from infra-logos#25): logos-core CLI `master`, package manager
-  `master`, storage module `v1.2.0`, libstorage `v0.4.0-rc4`. Tunable in
-  `ansible/roles/mp_node/defaults/main.yml`.
-- **Ports**: `8080/tcp` (libp2p listen), `8090/udp` (discovery), `22/tcp` (SSH).
+  `master`, storage module `v2.1.3`, libstorage `feat/mix-transport`. Tunable in
+  `ansible/roles/storage_node/defaults/main.yml`.
+- **Ports**: `8080/tcp` (libp2p and KadDHT), `22/tcp` (SSH).
   Kept in sync between the Terraform firewall and the node config.
 - **NAT**: droplets have public IPs directly, so `nat: extip:<public-ip>` and
   `listen-ip: <public-ip>`.
-- **Readiness**: a node is considered up once `Started Storage node` appears in
-  `/var/log/logoscore.log`.
+- **Readiness**: a node is considered up once `debug` returns a non-null TCP
+  SPR in `result.value.spr`.
 - **Spaces credentials**: the DO API token cannot create buckets or upload
   objects (that's the S3 data plane), which need separate Spaces access keys.
   The key is created out-of-band by `scripts/00-spaces-key.sh` (`doctl`) and

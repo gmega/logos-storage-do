@@ -1,0 +1,50 @@
+---
+- name: Verify running nodes
+  hosts: mp_nodes:rs_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Verify service, module version, TCP address and DHT peers
+      ansible.builtin.import_role:
+        name: storage_node
+        tasks_from: verify
+
+- name: Verify published artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    artifact_url: "https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2"
+  tasks:
+    - name: Confirm every node runs the same storage revision
+      ansible.builtin.assert:
+        that:
+          - >-
+            (groups['mp_nodes'] + groups['rs_nodes']) |
+            map('extract', hostvars, 'storage_revision') | unique | length == 1
+
+    - name: Fetch public artifacts and compare with the current deployment
+      ansible.builtin.uri:
+        url: "{{ artifact_url }}/{{ item }}"
+        return_content: true
+      loop:
+        - mix-pool.json
+        - tcp-sprs.json
+        - tcp-sprs.txt
+      register: published
+      failed_when: >-
+        published.status != 200 or
+        (published.content | trim) !=
+        (lookup('file', playbook_dir + '/../artifacts/' + item) | trim)
+
+- name: Verify a network download between regular storage nodes
+  hosts: rs_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Transfer a sample from the first RS node to the second
+      ansible.builtin.import_role:
+        name: storage_node
+        tasks_from: verify_transfer
+      when: groups['rs_nodes'] | length >= 2

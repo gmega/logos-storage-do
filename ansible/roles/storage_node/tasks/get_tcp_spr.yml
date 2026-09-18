@@ -1,0 +1,15 @@
+---
+# Captures the node's TCP SPR and stores it as the `tcp_spr` host fact.
+# Used on the bootstrap node so follower nodes can bootstrap off it.
+- name: Capture storage module debug output (for TCP SPR)
+  ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug"
+  register: spr_debug
+  changed_when: false
+
+- name: Set tcp_spr fact
+  ansible.builtin.set_fact:
+    tcp_spr: "{{ (spr_debug.stdout | from_json).result.value.spr }}"
+
+- name: Show bootstrap TCP SPR
+  ansible.builtin.debug:
+    msg: "Bootstrap TCP SPR: {{ tcp_spr }}"
