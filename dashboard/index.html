@@ -85,20 +85,40 @@ function downloadView(viewer,node,file,action){
  doc.querySelector('h1').textContent=file?.label||'Download';doc.getElementById('route').textContent=`${nodeTitle(node)} · ${action==='mix'?'Via Mix':'Direct download'}`;
  return doc;
 }
-function updateDownloadView(doc,job){
+function transferSpeed(samples,job,now){
+ const phase=job.phase;
+ if(phase!=='downloading' && phase!=='copying'){
+  samples.length=0;
+  return '';
+ }
+ const bytes=phase==='downloading' ? job.nodeBytes : job.dashboardBytes;
+ const previous=samples.at(-1);
+ if(previous && (previous.phase!==phase || bytes<previous.bytes))samples.length=0;
+ samples.push({phase,bytes,now});
+ // Four progress polls give a roughly six-second window at the usual cadence.
+ if(samples.length>4)samples.shift();
+ const first=samples[0],seconds=(now-first.now)/1000;
+ if(seconds<=0)return 'Estimating speed…';
+ const rate=(bytes-first.bytes)/seconds;
+ const [scale,unit]=rate>=1e6 ? [1e6,'MB/s'] : rate>=1000 ? [1000,'kB/s'] : [1,'B/s'];
+ return (rate/scale).toLocaleString(undefined,{maximumFractionDigits:1})+' '+unit;
+}
+function updateDownloadView(doc,job,samples){
  if(!doc)return;
  const total=job.totalBytes||0,bytes=job.nodeBytes||0,pct=total?Math.min(100,bytes/total*100):0;
  const bar=doc.querySelector('progress');if(job.phase==='connecting')bar.removeAttribute('value');else bar.value=pct;
  const mib=n=>(n/1048576).toFixed(1)+' MiB';
  doc.getElementById('amount').textContent=`${pct.toFixed(0)}% · ${mib(bytes)} / ${mib(total)} on node`;
  const descriptions={'connecting':'Connecting to the selected node…','downloading':'Downloading the file on the node…','verifying-node':'Verifying the completed file on the node…','copying':`Copying to the dashboard: ${mib(job.dashboardBytes||0)} / ${mib(total)}…`,'verifying-dashboard':'Verifying the dashboard copy…','ready':'Ready. Opening your file…'};
- doc.getElementById('phase').textContent=descriptions[job.phase]||'Working…';
+ const speed=transferSpeed(samples,job,performance.now());
+ doc.getElementById('phase').textContent=[descriptions[job.phase]||'Working…',speed].filter(Boolean).join(' · ');
 }
 async function startJob(n,action){
+ const speedSamples=[];
  const file=selections.get(n.name),viewer=action==='delete'?null:window.open('','_blank');const downloadDoc=downloadView(viewer,n,latestSnapshot?.files.find(f=>f.id===file),action);
  jobs.set(n.name,{state:'running',message:action==='delete'?'Removing file…':'Downloading on node…'});await refresh();
  try{const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard-Request':'1'},body:JSON.stringify({node:n.name,file,action})});const body=await r.json();if(!r.ok)throw Error(body.error||`HTTP ${r.status}`);
- for(;;){await new Promise(resolve=>setTimeout(resolve,2000));const poll=await fetch(`/api/jobs/${body.id}`,{cache:'no-store'});const job=await poll.json();if(!poll.ok||job.state==='failed')throw Error(job.error||'Job unavailable');if(viewer&&!viewer.closed)updateDownloadView(downloadDoc,job);if(job.state==='ready'){if(action==='delete'){const removed=latestSnapshot?.files.find(f=>f.id===file);if(removed)confirmedDeletions.set(`${n.name}:${removed.cid}`,Date.parse(poll.headers.get('Date'))/1000||Date.now()/1000)}const url=action==='delete'?null:`/api/jobs/${body.id}/content`;jobs.set(n.name,{state:'ready',message:action==='delete'?'Removed from this node.':'Ready. Open the file below (available for 15 minutes).',url});if(latestSnapshot)render(latestSnapshot);if(url&&viewer&&!viewer.closed)viewer.location.replace(url);break}}
+ for(;;){await new Promise(resolve=>setTimeout(resolve,2000));const poll=await fetch(`/api/jobs/${body.id}`,{cache:'no-store'});const job=await poll.json();if(!poll.ok||job.state==='failed')throw Error(job.error||'Job unavailable');if(viewer&&!viewer.closed)updateDownloadView(downloadDoc,job,speedSamples);if(job.state==='ready'){if(action==='delete'){const removed=latestSnapshot?.files.find(f=>f.id===file);if(removed)confirmedDeletions.set(`${n.name}:${removed.cid}`,Date.parse(poll.headers.get('Date'))/1000||Date.now()/1000)}const url=action==='delete'?null:`/api/jobs/${body.id}/content`;jobs.set(n.name,{state:'ready',message:action==='delete'?'Removed from this node.':'Ready. Open the file below (available for 15 minutes).',url});if(latestSnapshot)render(latestSnapshot);if(url&&viewer&&!viewer.closed)viewer.location.replace(url);break}}
  }catch(e){if(viewer&&!viewer.closed){const status=downloadDoc.getElementById('phase');status.className='error';status.textContent=`Download failed: ${e.message}`;downloadDoc.querySelector('progress').hidden=true;downloadDoc.getElementById('amount').textContent='Download could not finish';}jobs.set(n.name,{state:'failed',message:e.message})}await refresh()
 }
 let busy=false;async function refresh(){if(busy)return;busy=true;$('refresh').disabled=true;try{const r=await fetch('/health.json',{cache:'no-store'});if(!r.ok)throw Error(`HTTP ${r.status}`);render(await r.json())}catch(e){$('notice').textContent=`Cannot refresh node health: ${e.message}. Displayed data may be stale.`}finally{busy=false;$('refresh').disabled=false}}

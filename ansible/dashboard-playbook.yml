@@ -281,7 +281,7 @@
       ansible.builtin.systemd:
         name: nginx
         enabled: true
-        state: restarted
+        state: reloaded
     - name: Confirm public dashboard endpoints are available
       tags: [dashboard_access, portal]
       ansible.builtin.uri:

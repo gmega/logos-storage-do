@@ -5,7 +5,7 @@ installer=${1:?Usage: publish-join-installer.sh /path/to/bundled/install.sh}
 source "$(dirname "$0")/env.sh"
 case "$(sed -n '2p' "$installer")" in
   bundle_platform=macos-arm64) object=install-macos-arm64.sh ;;
-  bundle_platform=linux-x86_64|"unpack_tui() {") object=install.sh ;;
+  bundle_platform=linux-x86_64|"unpack_tui() {") object=install-linux-x86_64.sh ;;
   *) echo "Unknown installer platform" >&2; exit 1 ;;
 esac
 url="https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/$object"

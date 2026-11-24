@@ -119,7 +119,7 @@ ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json
 
 ## Join Devnet
 
-The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
+The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. The public filenames are `install-linux-x86_64.sh` and `install-macos-arm64.sh`. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
 
 ```bash
 scripts/publish-join-installer.sh /path/to/extracted/install.sh
