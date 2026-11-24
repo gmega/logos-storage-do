@@ -17,7 +17,11 @@ in DigitalOcean, and the `logos-storage-do` conda environment with Ansible.
 `DIGITALOCEAN_ACCESS_TOKEN`); Spaces credentials live in the ignored
 `scripts/.spaces.env` and are created by `scripts/00-spaces-key.sh` if needed.
 
-Configure region, droplet sizes and counts in `terraform/terraform.tfvars`.
+MP1 through MP4 run in New York, London, Amsterdam and Singapore, respectively.
+RS1 runs in Toronto and RS2 in Frankfurt. The dashboard displays each node’s
+location beside its name. The region assignments are in `terraform/main.tf`.
+Configure the Spaces region, droplet sizes and counts in `terraform/terraform.tfvars`.
+Additional nodes use the Spaces region by default.
 The configured SSH key is `giulianos-public-key-2`, with the private key at
 `~/.ssh/id_ed25519-2`. Then run:
 
@@ -115,7 +119,7 @@ ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json
 
 ## Join Devnet
 
-The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
+The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. The public filenames are `install-linux-x86_64.sh` and `install-macos-arm64.sh`. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
 
 ```bash
 scripts/publish-join-installer.sh /path/to/extracted/install.sh

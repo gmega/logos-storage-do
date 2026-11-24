@@ -56,4 +56,4 @@ PY
 terraform -chdir="${ROOT}/terraform" apply -input=false -auto-approve
 printf '\nDeployment verified. Dashboard: '
 terraform -chdir="${ROOT}/terraform" output -raw dashboard_url
-printf '\nPublic read-only dashboard; HTTPS certificate: scripts/.dashboard/server.crt\n'
+printf '\nPublic dashboard; HTTPS certificate: scripts/.dashboard/server.crt\n'

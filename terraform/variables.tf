@@ -1,5 +1,5 @@
 variable "region" {
-  description = "DigitalOcean region (must support Droplets and Spaces)."
+  description = "Spaces region and fallback Droplet region for nodes beyond the six assigned locations."
   type        = string
   default     = "fra1"
 }

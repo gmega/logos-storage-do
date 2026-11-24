@@ -13,13 +13,20 @@
   args:
     creates: "{{ random_file }}"
 
+# A dashboard deletion can remove a dataset between deployments.
+- name: Read current manifests before preloading
+  ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests"
+  register: preload_manifests
+  changed_when: false
+  failed_when: not (preload_manifests.stdout | from_json).result.success
+
 - name: Upload the book
   ansible.builtin.command: >
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
     call storage_module uploadUrl {{ book_file }} {{ upload_buffer }} true
-  args:
-    creates: "{{ logos_home }}/.book-uploaded"
-  register: upload_book
+  when: >-
+    (preload_manifests.stdout | from_json).result.value |
+    selectattr('filename', 'equalto', book_file | basename) | list | length == 0
 
 - name: Wait for the book upload to finish
   ansible.builtin.shell: >-
@@ -34,20 +41,14 @@
   delay: 5
   changed_when: false
 
-- name: Mark book uploaded
-  ansible.builtin.file:
-    path: "{{ logos_home }}/.book-uploaded"
-    state: touch
-    mode: "0644"
-  when: upload_book is changed
-
 - name: Upload the random file
   ansible.builtin.command: >
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
     call storage_module uploadUrl {{ random_file }} {{ upload_buffer }} true
-  args:
-    creates: "{{ logos_home }}/.random-uploaded"
-  register: upload_random
+  when: >-
+    (preload_manifests.stdout | from_json).result.value |
+    selectattr('filename', 'equalto', random_file | basename) |
+    selectattr('datasetSize', 'equalto', (random_file_mb | int) * 1024 * 1024) | list | length == 0
 
 - name: Wait for the random file upload to finish
   ansible.builtin.shell: >-
@@ -62,13 +63,6 @@
   retries: 60
   delay: 5
   changed_when: false
-
-- name: Mark random file uploaded
-  ansible.builtin.file:
-    path: "{{ logos_home }}/.random-uploaded"
-    state: touch
-    mode: "0644"
-  when: upload_random is changed
 
 - name: List manifests (preloaded content)
   ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests"

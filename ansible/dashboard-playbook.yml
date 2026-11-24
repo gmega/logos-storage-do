@@ -138,7 +138,7 @@
           {% for host in groups['mp_nodes'] + groups['rs_nodes'] %}
           {% set publisher = host == groups['rs_nodes'][0] %}
           {{ {
-            'name': host, 'ip': hostvars[host].public_ip,
+            'name': host, 'ip': hostvars[host].public_ip, 'location': hostvars[host].node_location | default(''),
             'role': ('MP' if host in groups['mp_nodes'] else 'RS'),
             'protected': publisher,
             'names': (hostvars[host].published_names.results | map(attribute='stdout') | map('from_json') | list
@@ -281,7 +281,7 @@
       ansible.builtin.systemd:
         name: nginx
         enabled: true
-        state: restarted
+        state: reloaded
     - name: Confirm public dashboard endpoints are available
       tags: [dashboard_access, portal]
       ansible.builtin.uri:

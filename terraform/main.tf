@@ -2,6 +2,18 @@ locals {
   # Public-facing bucket name (fixed, no suffix).
   bucket = var.bucket_name
 
+  # Keep node indices stable across regions. Extra nodes use the default region.
+  mp_regions = ["nyc3", "lon1", "ams3", "sgp1"]
+  rs_regions = ["tor1", "fra1"]
+  locations = {
+    nyc3 = "US - New York"
+    lon1 = "UK - London"
+    ams3 = "Netherlands - Amsterdam"
+    sgp1 = "Singapore"
+    tor1 = "Canada - Toronto"
+    fra1 = "Germany - Frankfurt"
+  }
+
   # Objects are namespaced under the version prefix, e.g. v0.4/tcp-sprs.json.
   key_prefix   = var.version_prefix == "" ? "" : "${var.version_prefix}/"
   tcp_spr_key  = "${local.key_prefix}tcp-sprs.txt"
@@ -23,7 +35,7 @@ resource "digitalocean_droplet" "mp" {
   name     = "${var.name_prefix}-${count.index + 1}"
   image    = var.image
   size     = var.droplet_size
-  region   = var.region
+  region   = try(local.mp_regions[count.index], var.region)
   ssh_keys = [data.digitalocean_ssh_key.default.fingerprint]
   tags     = var.tags
 
@@ -38,7 +50,7 @@ resource "digitalocean_droplet" "rs" {
   name     = "${var.rs_name_prefix}-${count.index + 1}"
   image    = var.image
   size     = var.droplet_size
-  region   = var.region
+  region   = try(local.rs_regions[count.index], var.region)
   ssh_keys = [data.digitalocean_ssh_key.default.fingerprint]
   tags     = concat(var.tags, ["regular-storage"])
 
@@ -103,15 +115,17 @@ resource "local_file" "ansible_inventory" {
       for idx, d in digitalocean_droplet.mp : {
         name      = d.name
         ip        = d.ipv4_address
+        location  = lookup(local.locations, d.region, d.region)
         index     = idx + 1
         bootstrap = idx == 0
       }
     ]
     rs_nodes = [
       for idx, d in digitalocean_droplet.rs : {
-        name  = d.name
-        ip    = d.ipv4_address
-        index = idx + 1
+        name     = d.name
+        ip       = d.ipv4_address
+        index    = idx + 1
+        location = lookup(local.locations, d.region, d.region)
       }
     ]
   })

@@ -34,6 +34,6 @@ output "tcp_sprs_json_url" {
 }
 
 output "dashboard_url" {
-  description = "Public read-only HTTPS dashboard (self-signed certificate)."
+  description = "Public HTTPS dashboard (self-signed certificate)."
   value       = "https://${digitalocean_droplet.mp[0].ipv4_address}/"
 }
