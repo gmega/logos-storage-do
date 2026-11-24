@@ -1,0 +1,262 @@
+---
+- name: Prepare the dashboard collector identity on the bootstrap droplet
+  hosts: mp_bootstrap
+  gather_facts: false
+  tasks:
+    - name: Install dashboard prerequisites
+      ansible.builtin.apt:
+        name: [nginx, openssl, openssh-client, python3]
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Create collector account
+      ansible.builtin.user:
+        name: logos-dashboard
+        system: true
+        home: /var/lib/logos-dashboard
+        shell: /usr/sbin/nologin
+        create_home: true
+    - name: Allow nginx to traverse the snapshot directory
+      ansible.builtin.file:
+        path: /var/lib/logos-dashboard
+        state: directory
+        owner: logos-dashboard
+        mode: '0755'
+    - name: Generate collector SSH key without revealing the private key
+      ansible.builtin.command: ssh-keygen -q -t ed25519 -N '' -f /var/lib/logos-dashboard/id_ed25519
+      args:
+        creates: /var/lib/logos-dashboard/id_ed25519
+      become: true
+      become_user: logos-dashboard
+    - name: Read collector public key
+      ansible.builtin.slurp:
+        src: /var/lib/logos-dashboard/id_ed25519.pub
+      register: dashboard_public_key
+
+- name: Build the two-file catalog from the protected source node
+  hosts: rs_nodes[0]
+  gather_facts: false
+  tasks:
+    - name: Read source manifests
+      ansible.builtin.command: logosctl --config-dir=/var/lib/logoscore call storage_module manifests
+      register: source_manifests
+      changed_when: false
+    - name: Hash source files
+      ansible.builtin.stat:
+        path: "/opt/logos/{{ item }}"
+        checksum_algorithm: sha256
+      loop: [random-200mb.bin, farewell-to-westphalia-foss-edition.pdf]
+      register: source_hashes
+    - name: Define catalog
+      ansible.builtin.set_fact:
+        dashboard_files: >-
+          {{ (dashboard_files | default([])) + [{'id': ('random' if item.item == 'random-200mb.bin' else 'book'),
+          'label': ('Random file · 200 MiB' if item.item == 'random-200mb.bin' else 'Farewell to Westphalia'),
+          'filename': item.item, 'size': item.stat.size, 'sha256': item.stat.checksum,
+          'type': ('application/octet-stream' if item.item == 'random-200mb.bin' else 'application/pdf'),
+          'cid': ((source_manifests.stdout | from_json).result.value | selectattr('filename', 'equalto', item.item) | first).cid}] }}
+      loop: "{{ source_hashes.results }}"
+
+- name: Permit restricted dashboard commands on every storage node
+  hosts: mp_nodes:rs_nodes
+  gather_facts: false
+  tasks:
+    - name: Load storage defaults
+      ansible.builtin.include_vars: roles/storage_node/defaults/main.yml
+    - name: Create node dashboard configuration directory
+      ansible.builtin.file:
+        path: /opt/logos-dashboard
+        state: directory
+        mode: '0755'
+    - name: Install fixed file catalog and deletion policy
+      ansible.builtin.copy:
+        dest: /opt/logos-dashboard/files.json
+        mode: '0644'
+        content: "{{ {'files': hostvars[groups['rs_nodes'][0]].dashboard_files, 'protected': inventory_hostname == groups['rs_nodes'][0]} | to_json }}"
+    - name: Install restricted file command
+      ansible.builtin.copy:
+        src: ../dashboard/node-files.py
+        dest: /opt/logos-dashboard/node-files.py
+        mode: '0755'
+    - name: Install forced snapshot command
+      ansible.builtin.template:
+        src: roles/dashboard/templates/snapshot.sh.j2
+        dest: /opt/logos/health-snapshot.sh
+        owner: root
+        mode: '0755'
+    - name: Authorize restricted collector key
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        regexp: '.*logos-dashboard-collector$'
+        line: >-
+          restrict,from="{{ hostvars[groups['mp_bootstrap'][0]].public_ip }}",command="/usr/bin/python3 /opt/logos-dashboard/node-files.py"
+          {{ (hostvars[groups['mp_bootstrap'][0]].dashboard_public_key.content | b64decode).split()[0:2] | join(' ') }} logos-dashboard-collector
+        create: true
+        mode: '0600'
+    - name: Read node SSH host public key
+      ansible.builtin.slurp:
+        src: /etc/ssh/ssh_host_ed25519_key.pub
+      register: dashboard_host_key
+
+- name: Install dashboard and periodic collector
+  hosts: mp_bootstrap
+  gather_facts: false
+  tasks:
+    - name: Create dashboard application directory
+      ansible.builtin.file:
+        path: /opt/logos-dashboard
+        state: directory
+        mode: '0755'
+    - name: Install dashboard application
+      ansible.builtin.copy:
+        src: "../dashboard/{{ item }}"
+        dest: "/opt/logos-dashboard/{{ item }}"
+        mode: '0644'
+      loop: [index.html, collector.py, server.py]
+    - name: Write node list
+      ansible.builtin.copy:
+        dest: /opt/logos-dashboard/nodes.json
+        mode: '0644'
+        content: |
+          [
+          {% for host in groups['mp_nodes'] + groups['rs_nodes'] %}
+          {{ {'name': host, 'ip': hostvars[host].public_ip, 'role': ('MP' if host in groups['mp_nodes'] else 'RS'), 'protected': host == groups['rs_nodes'][0]} | to_json }}{{ ',' if not loop.last else '' }}
+          {% endfor %}
+          ]
+    - name: Pin SSH host keys obtained through Ansible
+      ansible.builtin.copy:
+        dest: /var/lib/logos-dashboard/known_hosts
+        owner: logos-dashboard
+        mode: '0600'
+        content: |
+          {% for host in groups['mp_nodes'] + groups['rs_nodes'] %}
+          {{ hostvars[host].public_ip }} {{ (hostvars[host].dashboard_host_key.content | b64decode).split()[0:2] | join(' ') }}
+          {% endfor %}
+    - name: Remove obsolete basic authentication hash
+      tags: [dashboard_access]
+      ansible.builtin.file:
+        path: /etc/nginx/logos-dashboard.htpasswd
+        state: absent
+    - name: Generate dashboard TLS certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -x509
+          - -newkey
+          - rsa:3072
+          - -nodes
+          - -days
+          - '365'
+          - -keyout
+          - /etc/nginx/logos-dashboard.key
+          - -out
+          - /etc/nginx/logos-dashboard.crt
+          - -subj
+          - /CN=Logos dashboard
+          - -addext
+          - "subjectAltName=IP:{{ public_ip }}"
+      args:
+        creates: /etc/nginx/logos-dashboard.crt
+      no_log: true
+    - name: Restrict TLS private key
+      ansible.builtin.file:
+        path: /etc/nginx/logos-dashboard.key
+        mode: '0600'
+    - name: Save public certificate for local verification
+      ansible.builtin.fetch:
+        src: /etc/nginx/logos-dashboard.crt
+        dest: ../scripts/.dashboard/server.crt
+        flat: true
+    - name: Install nginx virtual host
+      tags: [dashboard_access]
+      ansible.builtin.template:
+        src: roles/dashboard/templates/nginx.conf.j2
+        dest: /etc/nginx/sites-enabled/logos-dashboard
+        mode: '0644'
+    - name: Remove default nginx virtual host
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+    - name: Validate nginx configuration
+      tags: [dashboard_access]
+      ansible.builtin.command: nginx -t
+      changed_when: false
+    - name: Install collector service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/logos-dashboard.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Collect Logos node debug snapshots
+          After=network-online.target
+          [Service]
+          Type=oneshot
+          User=logos-dashboard
+          ExecStart=/usr/bin/python3 /opt/logos-dashboard/collector.py
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ReadWritePaths=/var/lib/logos-dashboard
+          PrivateTmp=true
+    - name: Install file API service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/logos-dashboard-files.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Logos dashboard bounded file transfers
+          After=network-online.target
+          [Service]
+          User=logos-dashboard
+          ExecStart=/usr/bin/python3 /opt/logos-dashboard/server.py
+          Restart=on-failure
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          ReadWritePaths=/var/lib/logos-dashboard
+          MemoryMax=256M
+          TasksMax=64
+          [Install]
+          WantedBy=multi-user.target
+    - name: Enable file API
+      ansible.builtin.systemd:
+        name: logos-dashboard-files.service
+        enabled: true
+        state: restarted
+        daemon_reload: true
+    - name: Install collector timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/logos-dashboard.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Refresh Logos dashboard every 30 seconds
+          [Timer]
+          OnBootSec=15
+          OnUnitActiveSec=30
+          AccuracySec=1
+          [Install]
+          WantedBy=timers.target
+    - name: Enable collector timer
+      ansible.builtin.systemd:
+        name: logos-dashboard.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+    - name: Collect initial snapshots
+      ansible.builtin.systemd:
+        name: logos-dashboard.service
+        state: started
+    - name: Enable HTTPS dashboard
+      tags: [dashboard_access]
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: restarted
+    - name: Confirm public dashboard endpoints are available
+      tags: [dashboard_access]
+      ansible.builtin.uri:
+        url: "https://{{ public_ip }}{{ item }}"
+        validate_certs: false
+        status_code: 200
+      loop: ["/", "/health.json"]

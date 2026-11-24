@@ -2,15 +2,13 @@ locals {
   # Public-facing bucket name (fixed, no suffix).
   bucket = var.bucket_name
 
-  # Objects are namespaced under the version prefix, e.g. v0.2/mix-pool.json.
+  # Objects are namespaced under the version prefix, e.g. v0.4/tcp-sprs.json.
   key_prefix   = var.version_prefix == "" ? "" : "${var.version_prefix}/"
-  mix_pool_key = "${local.key_prefix}mix-pool.json"
   tcp_spr_key  = "${local.key_prefix}tcp-sprs.txt"
   tcp_json_key = "${local.key_prefix}tcp-sprs.json"
 
   # Local artifact files (flat) that Ansible drops; uploaded under the prefixed keys above.
   artifacts = {
-    mix_pool = "${path.module}/${var.artifacts_dir}/mix-pool.json"
     tcp_txt  = "${path.module}/${var.artifacts_dir}/tcp-sprs.txt"
     tcp_json = "${path.module}/${var.artifacts_dir}/tcp-sprs.json"
   }
@@ -34,8 +32,7 @@ resource "digitalocean_droplet" "mp" {
   resize_disk = false
 }
 
-# Regular Storage (RS) nodes. Same toolchain/build as MP nodes, but configured
-# to USE the mix network (mix-pool + dht-mix-proxy) rather than relay it.
+# Regular Storage (RS) nodes discover network services after bootstrap.
 resource "digitalocean_droplet" "rs" {
   count    = var.rs_node_count
   name     = "${var.rs_name_prefix}-${count.index + 1}"
@@ -125,18 +122,6 @@ resource "local_file" "ansible_inventory" {
 # locally, so each upload is guarded by fileexists(): the first apply (before
 # provisioning) skips them, and the publish apply (after provisioning) uploads.
 # ---------------------------------------------------------------------------
-resource "digitalocean_spaces_bucket_object" "mix_pool" {
-  count = fileexists(local.artifacts.mix_pool) ? 1 : 0
-
-  region       = var.region
-  bucket       = digitalocean_spaces_bucket.artifacts.name
-  key          = local.mix_pool_key
-  source       = local.artifacts.mix_pool
-  etag         = filemd5(local.artifacts.mix_pool)
-  acl          = "public-read"
-  content_type = "application/json"
-}
-
 resource "digitalocean_spaces_bucket_object" "tcp_sprs_txt" {
   count = fileexists(local.artifacts.tcp_txt) ? 1 : 0
 
@@ -159,4 +144,28 @@ resource "digitalocean_spaces_bucket_object" "tcp_sprs_json" {
   etag         = filemd5(local.artifacts.tcp_json)
   acl          = "public-read"
   content_type = "application/json"
+}
+
+# Publish only after every node and the transfer check pass. Root metadata is
+# independent of the network namespace, so subsequent deploys can compare it.
+resource "digitalocean_spaces_bucket_object" "metadata" {
+  count        = fileexists("${path.module}/${var.artifacts_dir}/metadata.json") ? 1 : 0
+  region       = var.region
+  bucket       = digitalocean_spaces_bucket.artifacts.name
+  key          = "metadata.json"
+  source       = "${path.module}/${var.artifacts_dir}/metadata.json"
+  etag         = filemd5("${path.module}/${var.artifacts_dir}/metadata.json")
+  acl          = "public-read"
+  content_type = "application/json"
+}
+
+# Only the bootstrap host serves the authenticated HTTPS dashboard.
+resource "digitalocean_firewall" "dashboard" {
+  name        = "${var.name_prefix}-dashboard-fw"
+  droplet_ids = [digitalocean_droplet.mp[0].id]
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "443"
+    source_addresses = ["0.0.0.0/0", "::/0"]
+  }
 }

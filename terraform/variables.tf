@@ -52,9 +52,9 @@ variable "bucket_name" {
 }
 
 variable "version_prefix" {
-  description = "Path prefix (key namespace) for published objects within the bucket, e.g. v0.2 -> v0.2/mix-pool.json."
+  description = "Path prefix (key namespace) for published objects within the bucket, e.g. v0.4 -> v0.4/tcp-sprs.json."
   type        = string
-  default     = "v0.2"
+  default     = "v0.4"
 }
 
 variable "name_prefix" {
@@ -66,7 +66,7 @@ variable "name_prefix" {
 variable "tags" {
   description = "Tags applied to all droplets."
   type        = list(string)
-  default     = ["logos-storage", "mix-proxy", "v0_2"]
+  default     = ["logos-storage", "mix-proxy", "v0_4"]
 }
 
 variable "artifacts_dir" {

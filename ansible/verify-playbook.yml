@@ -15,7 +15,7 @@
   gather_facts: false
   any_errors_fatal: true
   vars:
-    artifact_url: "https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2"
+    artifact_url: "https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4"
   tasks:
     - name: Confirm every node runs the same storage revision
       ansible.builtin.assert:
@@ -29,7 +29,6 @@
         url: "{{ artifact_url }}/{{ item }}"
         return_content: true
       loop:
-        - mix-pool.json
         - tcp-sprs.json
         - tcp-sprs.txt
       register: published

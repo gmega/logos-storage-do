@@ -1,11 +1,12 @@
 [Unit]
 Description=Logos Core daemon (storage module / mix-proxy node)
-After=network-online.target nix-daemon.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
+Environment=HOME=/root
 Type=simple
-ExecStart={{ logos_bin }} --config-dir={{ logos_config_dir }} -D -m {{ logos_modules }}
+ExecStart={{ logos_bin }} --config-dir={{ logos_config_dir }} daemon start
 # Load + init + start the storage module into the freshly-started daemon, so a
 # plain `systemctl restart` fully restores the node (the module is runtime state,
 # not something the daemon restores on its own).

@@ -3,8 +3,7 @@
 logos_home: /opt/logos
 logos_build: "{{ logos_home }}/build"
 logos_modules: "{{ logos_home }}/modules"
-logos_bin: "{{ logos_build }}/logos/bin/logoscore"
-lgpm_bin: "{{ logos_build }}/package-manager/bin/lgpm"
+logos_bin: "{{ logos_home }}/logosctl-{{ logosctl_version }}/squashfs-root/AppRun"
 mix_helper: "{{ logos_home }}/mix_helper.py"
 
 logos_config_dir: /var/lib/logoscore
@@ -12,20 +11,10 @@ logos_config_file: "{{ logos_home }}/config.json"
 logos_data_dir: /var/logos-storage-data
 logos_log: /var/log/logoscore.log
 
-# Nix (Determinate Systems installer puts nix here, with flakes enabled).
-nix_bin: /nix/var/nix/profiles/default/bin/nix
-# Limit parallel builds and compiler jobs to avoid exhausting the nodes' 16 GB RAM.
-nix_flags: --extra-experimental-features "nix-command flakes" --max-jobs 1 --cores 2
-# Max seconds a single Nix build may run before Ansible gives up. Cold Nim/
-# libp2p compilation is slow, so this is deliberately generous (4 hours).
-nix_build_timeout: 14400
-nix_build_poll: 30
-
-# Component versions. libstorage_ref accepts a branch or a full tag ref.
-logos_cli_ref: master
-logos_pkgmgr_ref: master
-storage_module_ref: v2.1.3
-libstorage_ref: feat/mix-transport
+# Portable CLI; module version and checksum are resolved once by deploy.sh.
+logosctl_version: "0.3.2"
+logosctl_sha256: "294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762"
+storage_module_ref: "{{ deployment_version }}"
 
 # Network ports (must match the Terraform firewall rules).
 listen_port: 8080
@@ -39,8 +28,6 @@ spr_ready_retries: 15
 spr_ready_delay: 2
 
 # --- Regular Storage (RS) node extras ---
-# Local mix-pool.json copied onto the node and referenced by the RS config.
-mix_pool_file: "{{ logos_home }}/mix-pool.json"
 # Content preloaded onto RS nodes.
 book_url: "https://logos.co/book/farewell-to-westphalia-foss-edition.pdf"
 book_file: "{{ logos_home }}/farewell-to-westphalia-foss-edition.pdf"

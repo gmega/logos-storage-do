@@ -1,187 +1,141 @@
-# Logos Storage v0.3 — Mix-Proxy network on DigitalOcean
+# Logos Storage v0.4 on DigitalOcean
 
-Deploys the **Mix-Proxy (MP) network** for Logos Storage v0.3: four MP nodes,
-one DigitalOcean droplet each, managed with **Terraform** and provisioned with
-**Ansible**. After the network is up, the two global config artifacts are
-published to a public DigitalOcean Spaces bucket:
+Terraform manages four provider (MP) droplets, two regular storage (RS) droplets,
+a Spaces bucket, and firewalls. Ansible installs precompiled portable binaries,
+starts the network and verifies discovery plus an RS-to-RS content transfer.
 
-- `mix-pool.json` — merged mix relay pool (all MP nodes)
-- `tcp-sprs.txt` / `tcp-sprs.json` — the MP nodes' TCP SPRs (one per node)
-
-These are what the Regular Storage (RS) nodes need to route their queries
-through the mix network. See [infra-logos#25](https://github.com/status-im/infra-logos/issues/25)
-and the [reference harness](https://github.com/gmega/logos-storage-runner).
-
-Two Regular Storage nodes (stage 2) are also deployed: each consumes the MP artifacts
-(mix-pool + the MP TCP SPRs as `dht-mix-proxy`) and is preloaded with content —
-Jarrad's book and a randomly generated 200 MB file (`ansible/rs-playbook.yml`).
-
-## Architecture
-
-```
-              Terraform                         Ansible
-  ┌─────────────────────────────┐   ┌────────────────────────────────────┐
-  │ 4x droplet (fra1, 4vcpu/8gb) │   │ build logoscore + lgpm + storage   │
-  │ cloud firewall 22,8080       │──▶│ module (Nix), run logoscore daemon │
-  │ Spaces bucket                │   │ as systemd service, start MP node  │
-  │ -> ansible/inventory.ini     │   │ export mix info + SPRs             │
-  └─────────────────────────────┘   └────────────────┬───────────────────┘
-                 ▲                                    │ fetch
-                 │ publish mix-pool.json, tcp-sprs.*  ▼
-          ┌──────┴───────────────┐         artifacts/ (merged on controller)
-          │ Spaces (public-read) │◀────────────────────
-          └──────────────────────┘
-```
-
-Node 1 is the bootstrap (`no-bootstrap-node: true`); nodes 2–4 bootstrap off
-node 1's TCP SPR. All nodes run with `mix-enabled: true` and join the mix pool.
-
-## Repo layout
-
-```
-terraform/        Droplets, firewall, Spaces bucket + object uploads, inventory
-  templates/      Ansible inventory template (rendered from droplet data)
-ansible/
-  playbook.yml    MP: build → bootstrap → followers → export → merge
-  rs-playbook.yml RS: build → configure (mix-pool/dht-mix-proxy) → preload
-  verify-playbook.yml Service/version/DHT checks, public artifacts, RS transfer
-  roles/storage_node/  build / run / run_rs / export / preload + templates
-  tasks/merge.yml Controller-side merge into the published artifacts
-  files/          Vendored mix_helper.py (from the reference harness)
-scripts/
-  env.sh          Loads DIGITALOCEAN_ACCESS_TOKEN + Spaces creds
-  00-spaces-key.sh  Mints a Spaces key -> scripts/.spaces.env
-  deploy.sh       One-shot: tf apply → ansible → tf apply (publish)
-  destroy.sh      Tear everything down
-artifacts/        Generated at deploy time (gitignored)
-```
-
-## Prerequisites
-
-- `DO_TOKEN` exported (DigitalOcean API token) — already present in this shell.
-- SSH key **`giulianos-public-key-2`** registered in the DO account, with the
-  matching private key at `~/.ssh/id_ed25519-2` (used by Ansible).
-- `terraform`, `doctl`, and `jq` on PATH (`doctl` creates the Spaces key).
-- A conda env with Ansible (kept out of the global/base env):
-
-  ```bash
-  # conda-forge avoids the Anaconda channel ToS prompt.
-  conda create -y -n logos-storage-do -c conda-forge --override-channels python=3.12
-  conda activate logos-storage-do
-  pip install "ansible-core>=2.16"
-  # Provides the log_plays callback (ansible.cfg) that writes logs/<host>.
-  ansible-galaxy collection install community.general
-  ```
-
-  `scripts/conda.sh` finds the conda install (`$CONDA_EXE`, `~/miniconda3`,
-  `~/anaconda3`, `~/miniforge3`, `~/mambaforge`, `/opt/conda`) and activates
-  that env; `deploy.sh` and `restart.sh` source it.
-
-## Configuration
-
-Edit `terraform/terraform.tfvars` to change region, size, node count, SSH key,
-bucket name, or version prefix. Defaults:
-
-| Variable        | Default                  |
-|-----------------|--------------------------|
-| `region`        | `fra1`                   |
-| `droplet_size`  | `s-4vcpu-8gb`            |
-| `node_count`    | `4`                      |
-| `ssh_key_name`  | `giulianos-public-key-2` |
-| `bucket_name`   | `logos-storage-network`  |
-| `version_prefix`| `v0.2`                   |
-
-Set `storage_module_ref` and `libstorage_ref` in
-`ansible/roles/storage_node/defaults/main.yml` to select the module release and
-its logos-storage dependency branch (or full tag ref). The Nix build overrides
-the module’s `logos-storage` input, including submodules.
-
-Published object keys are namespaced under the version prefix, e.g.
-`v0.2/mix-pool.json`.
+Nodes learn Mix relays, DHT proxies, AutoNAT servers and circuit relays through
+service discovery. Only bootstrap SPRs are supplied statically. MP nodes advertise
+all four services (`mix-enabled`, `dht-proxy-server`, `autonat-server`,
+`relay-server`). RS nodes use discovery to find DHT proxies and relays.
 
 ## Deploy
 
-```bash
-source scripts/env.sh        # DO token + Spaces creds (mints key on first run)
-scripts/deploy.sh            # tf apply → ansible → tf apply (publish)
-```
+Requirements: Terraform, jq, Python 3, OpenSSL, curl, doctl, an SSH key registered
+in DigitalOcean, and the `logos-storage-do` conda environment with Ansible.
+`scripts/conda.sh` locates that environment. Set `DO_TOKEN` (or
+`DIGITALOCEAN_ACCESS_TOKEN`); Spaces credentials live in the ignored
+`scripts/.spaces.env` and are created by `scripts/00-spaces-key.sh` if needed.
 
-Or run the stages manually:
-
-```bash
-scripts/00-spaces-key.sh        # create the Spaces key -> scripts/.spaces.env (once)
-source scripts/env.sh           # load DO token + Spaces creds
-
-cd terraform && terraform init && terraform apply        # droplets + firewall + bucket + inventory
-cd ../ansible && ansible-playbook playbook.yml           # build + run + export
-cd ../terraform && terraform apply                       # publish artifacts
-```
-
-> The Nix builds compile Nim from source and can take a long time on a cold
-> cache (tens of minutes per node, run in parallel). The Ansible build step
-> allows up to 4h per build (`nix_build_timeout`).
-
-Deployment finishes by verifying services, module versions, TCP addresses, DHT
-peers, and public artifacts. With at least two RS nodes, it also downloads the
-first RS node's 1 MiB verification sample on the second and compares SHA-256 hashes.
-Both RS nodes must have private queries enabled. The downloaded verification
-file is saved as `/opt/logos/verify-transfer.bin` on the second RS node.
-
-## Result
+Configure region, droplet sizes and counts in `terraform/terraform.tfvars`.
+The configured SSH key is `giulianos-public-key-2`, with the private key at
+`~/.ssh/id_ed25519-2`. Then run:
 
 ```bash
-cd terraform && terraform output
+scripts/deploy.sh
+scripts/deploy.sh --force   # explicitly allow the same version again
 ```
 
-Public URLs (after the publish apply):
+The deployment resolves the newest **published** `storage_module` release by
+publication time from the [dev catalog](https://github.com/logos-co/logos-modules-dev).
+It pins its complete version, download URL and SHA-256 once, in
+`artifacts/release.json`, for every node. A release without Linux AMD64 is refused;
+it does not silently fall back to an older version. A build still running in
+Actions is not yet a published release.
 
-- `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/mix-pool.json`
-- `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/tcp-sprs.txt`
-- `https://logos-storage-network.fra1.digitaloceanspaces.com/v0.2/tcp-sprs.json`
+Before changing infrastructure or nodes, it compares that version with the
+bucket's root `metadata.json`, whose global `version` field records the last
+successfully verified deployment. An identical version is refused unless
+`--force` is passed. Network/authentication errors are fatal; only HTTP 404 means
+there is no prior metadata. Metadata is updated after node versions, discovery,
+public bootstrap artifacts and the transfer test pass. Failed deployments leave
+the previous successful version in place and can be retried.
 
-## Regular Storage node
-
-`deploy.sh` provisions the RS node(s) automatically after the MP artifacts
-exist. To (re-)run just the RS stage:
+Portable `logosctl` 0.3.2 is pinned by SHA-256 in the storage role defaults.
+The AppImage is extracted so droplets do not need FUSE or Nix. The bundled storage module and package downloader are preserved outside the
+runtime scan path: CLI 0.3.2 otherwise starts its own storage node automatically.
+Ansible downloads packages, and the package manager installs local LGX files.
+The package is
+installed into `/var/lib/logoscore` using its package manager. The systemd service
+keeps the name `logoscore` for operational continuity, but runs `logosctl`.
 
 ```bash
-source scripts/env.sh
-cd ansible && ansible-playbook rs-playbook.yml
+terraform -chdir=terraform output
+ssh root@NODE 'logosctl --config-dir=/var/lib/logoscore call storage_module debug'
+scripts/restart.sh
 ```
 
-It builds the same toolchain, writes an RS `config.json` (`mix-pool` +
-`dht-mix-proxy` from the MP TCP SPRs, bootstrapped off node 1's TCP SPR), starts
-the node, and preloads it with the book + a 200 MB random file via `uploadUrl`.
-The number of RS nodes is `rs_node_count` (default 2) in `terraform.tfvars`.
-Confirm the preloaded content with:
+## Dashboard
+
+The bootstrap droplet serves the dashboard on HTTPS port 443. No extra droplet
+is required. Run `terraform -chdir=terraform output -raw dashboard_url` for its URL.
+
+The dashboard is public; no login is required. Both the page and
+`/health.json` expose node addresses, versions, peer connections and debug data.
+Dashboard v1.1 allows downloading two fixed datasets directly or via Mix, and deleting their local storage copies except on RS1.
+A compromise of the host itself is more serious: it also runs the bootstrap
+storage node. The dashboard SSH key permits snapshots and only these fixed file operations.
+
+With no DNS name configured, HTTPS uses a self-signed certificate containing the
+droplet IP. The public certificate is saved in `scripts/.dashboard/server.crt`.
+Previously generated basic-auth passwords are no longer used.
+
+The dashboard shows runtime health, exact deployed version, DHT peers,
+connections, NAT status and discovered providers by service. Expand a provider
+section to inspect peer addresses and last-seen timestamps; the full debug
+response is also available. Empty discovery tables are marked incomplete and
+snapshots older than 90 seconds are marked stale.
+
+A systemd timer refreshes snapshots every 30 seconds. The collector runs as the
+unprivileged `logos-dashboard` user. Its dedicated SSH key is restricted on each
+node to a forced command that validates file IDs and operations, with forwarding disabled and source IP
+restricted to the dashboard host. SSH host keys are pinned through Ansible.
+No daemon control port is exposed publicly.
+
+Each node card has selectable random-file and book entries. Green/red presence is
+based on CID membership in manifests; gray means the snapshot is unavailable.
+Downloads are asynchronous: the node downloads the dataset, the dashboard copies
+and verifies its SHA-256, and the browser opens the PDF or saves the random binary.
+The download tab shows node-side bytes and percentage, sampled from the output
+file every two seconds, then separate verification and dashboard-copy stages.
+Progress is reported over SSH stderr, separately from the file bytes.
+The completion link remains available for 15 minutes. Mix uses `isPrivate=true`
+and `advertise=false`; cached data can satisfy either mode. Delete waits for the
+manifest to disappear. RS1 deletion is blocked in both the API and the node command.
+
+The unprivileged file service allows two jobs at once, one per node, and at most
+eight retained jobs (up to 1.6 GiB of file data). Nginx limits job submissions to
+six per minute per IP and four concurrent API requests at 1 MiB/s each. These
+bounds reduce abuse but are not a hard spending cap for a public service.
+No cloud provisioning credentials are used by the dashboard. File API logs are
+in `journalctl -u logos-dashboard-files`.
+
 
 ```bash
-ssh root@<rs-ip> '/opt/logos/build/logos/bin/logoscore \
-  --config-dir=/var/lib/logoscore call storage_module manifests' | jq
+cd ansible
+ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json
 ```
 
-## Teardown
+## Bootstrap artifacts and client configuration
+
+The bucket publishes `v0.4/tcp-sprs.json` and `v0.4/tcp-sprs.txt` as bootstrap
+records. It no longer publishes or consumes a static mix pool. The root
+`metadata.json` is independent of this namespace.
 
 ```bash
-source scripts/env.sh
-scripts/destroy.sh                # droplets + firewall + bucket + objects
-scripts/destroy.sh --delete-key   # also delete the minted Spaces key
+scripts/gen_config.sh json ./logos-storage-data
+scripts/gen_config.sh toml ./logos-storage-data   # requires Python tomli-w
 ```
 
-## Notes & assumptions
+Set `ARTIFACT_URL` to use a different bucket/prefix. Existing old `v0.2` URLs
+are not the configuration source for v0.4 clients.
 
-- **Versions** (from infra-logos#25): logos-core CLI `master`, package manager
-  `master`, storage module `v2.1.3`, libstorage `feat/mix-transport`. Tunable in
-  `ansible/roles/storage_node/defaults/main.yml`.
-- **Ports**: `8080/tcp` (libp2p and KadDHT), `22/tcp` (SSH).
-  Kept in sync between the Terraform firewall and the node config.
-- **NAT**: droplets have public IPs directly, so `nat: extip:<public-ip>` and
-  `listen-ip: <public-ip>`.
-- **Readiness**: a node is considered up once `debug` returns a non-null TCP
-  SPR in `result.value.spr`.
-- **Spaces credentials**: the DO API token cannot create buckets or upload
-  objects (that's the S3 data plane), which need separate Spaces access keys.
-  The key is created out-of-band by `scripts/00-spaces-key.sh` (`doctl`) and
-  passed to Terraform as the `SPACES_ACCESS_KEY_ID` / `SPACES_SECRET_ACCESS_KEY`
-  env vars. It lives only in `scripts/.spaces.env` (gitignored); nothing secret
-  is committed.
+## Validation and operations
+
+```bash
+python3 -m unittest discover -s tests -v
+terraform -chdir=terraform validate
+source scripts/conda.sh
+cd ansible
+ansible-playbook verify-playbook.yml -e @../artifacts/release.json
+```
+
+Verification waits for all four service provider tables to populate and checks
+that nodes run the same storage revision. A 1 MiB sample uploaded to the first RS
+node is downloaded by the second and checked by SHA-256. Book and 200 MiB sample
+preloads remain part of the RS deployment.
+
+Node logs are in `/var/lib/logoscore/logs/` and systemd's `logoscore` journal.
+Collector logs are in `journalctl -u logos-dashboard.service`.
+`scripts/destroy.sh` tears down the Terraform-managed network and bucket;
+`--delete-key` also removes the minted Spaces key.

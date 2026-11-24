@@ -10,7 +10,7 @@ LOGOS=("{{ logos_bin }}" "--config-dir={{ logos_config_dir }}")
 # Wait until the daemon accepts commands, then load the module.
 loaded=0
 for _ in $(seq 1 30); do
-  if "${LOGOS[@]}" load-module storage_module; then
+  if "${LOGOS[@]}" module load storage_module; then
     loaded=1
     break
   fi
@@ -21,8 +21,8 @@ if [[ "$loaded" -ne 1 ]]; then
   exit 1
 fi
 
-"${LOGOS[@]}" call storage_module init "@{{ logos_config_file }}"
-"${LOGOS[@]}" call storage_module start
+"${LOGOS[@]}" call storage_module init "@{{ logos_config_file }}" | jq --exit-status '.result == true'
+"${LOGOS[@]}" call storage_module start | jq --exit-status '.result == true'
 
 # Readiness predicate (mirrors the reference harness' sto_get_spr): a successful
 # `debug` call is NOT enough — the node is only usable once it has computed and

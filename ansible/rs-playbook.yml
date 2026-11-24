@@ -1,11 +1,6 @@
 ---
-# Logos Storage v0.2 — Regular Storage (RS) node provisioning.
-#
-# Run AFTER the MP network is up and its artifacts have been produced
-# (artifacts/mix-pool.json, artifacts/raw/1/tcp-spr.txt, artifacts/tcp-sprs.json).
-# The RS node uses the MP nodes as mix proxies to anonymize its queries.
-
-- name: "RS Phase 1 — Build Logos toolchain + storage module"
+# Bootstrap from the MP network; discover service providers dynamically.
+- name: "RS Phase 1 — Install precompiled Logos toolchain + storage module"
   hosts: rs_nodes
   gather_facts: false
   any_errors_fatal: true
@@ -21,7 +16,6 @@
   any_errors_fatal: true
   vars:
     bootstrap_tcp_spr: "{{ lookup('file', playbook_dir + '/../artifacts/raw/1/tcp-spr.txt') | trim }}"
-    dht_mix_proxy: "{{ lookup('file', playbook_dir + '/../artifacts/tcp-sprs.json') | from_json }}"
   tasks:
     - name: Run RS node
       ansible.builtin.import_role:

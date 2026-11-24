@@ -1,56 +1,59 @@
 #!/usr/bin/env bash
-# End-to-end deploy of the Logos Storage Mix-Proxy network.
-#
-#   0. (once) create the Spaces key out-of-band  -> scripts/.spaces.env
-#   1. terraform apply  -> 4 droplets + firewall + Spaces bucket + inventory
-#   2. ansible-playbook -> build logoscore, start MP network, export artifacts
-#   3. terraform apply  -> publish mix-pool.json + tcp-sprs.* to the bucket
-#
-# Prerequisites: DO_TOKEN set; conda env 'logos-storage-do' with ansible-core;
-# SSH key 'giulianos-public-key' in the DO account.
+# Resolve one catalog release, provision, verify, then publish global metadata.
 set -euo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "${HERE}")"
-
-# 0. Ensure the Spaces key exists, then load all credentials.
-"${HERE}/00-spaces-key.sh"
-# shellcheck disable=SC1091
+ROOT="$(dirname "$HERE")"
+force=()
+case "${1:-}" in
+  --force) force=(--force) ;;
+  '') ;;
+  *) echo 'Usage: scripts/deploy.sh [--force]' >&2; exit 2 ;;
+esac
+[[ $# -le 1 ]] || { echo 'Too many arguments' >&2; exit 2; }
+mkdir -p "${ROOT}/artifacts"
+# Prevent two local deployments from racing version checks and metadata writes.
+exec 9>"${ROOT}/artifacts/deploy.lock"
+flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
 source "${HERE}/env.sh"
-
-# Ansible lives in a dedicated conda env (never installed globally).
-# shellcheck disable=SC1091
 source "${HERE}/conda.sh"
-
-# 1. Infrastructure: droplets + firewall + bucket + Ansible inventory.
 cd "${ROOT}/terraform"
 terraform init -input=false
-terraform apply -input=false -auto-approve
-
-# 2. Provisioning: build + run + export + merge.
+# Derive the endpoint from configured variables, including on a fresh deployment.
+bucket_url=${BUCKET_URL:-$(printf '"https://${var.bucket_name}.${var.region}.digitaloceanspaces.com"\n' | terraform console | jq -r .)}
+python3 "${HERE}/resolve-release.py" --bucket-url "$bucket_url" \
+  --output "${ROOT}/artifacts/release.json" "${force[@]}"
+# Duplicate-version refusal happens before any infrastructure or node mutation.
+"${HERE}/00-spaces-key.sh"
+source "${HERE}/env.sh"
+# Infrastructure stage excludes generated objects so old local bootstrap records
+# cannot be published under the new namespace before provisioning finishes.
+terraform apply -input=false -auto-approve \
+  -target=local_file.ansible_inventory -target=digitalocean_firewall.mp \
+  -target=digitalocean_firewall.dashboard -target=digitalocean_spaces_bucket.artifacts
 cd "${ROOT}/ansible"
-ansible-playbook playbook.yml
-
-# 3. Publish artifacts (now that Ansible has produced them locally).
-cd "${ROOT}/terraform"
-terraform apply -input=false -auto-approve
-
-# 4. Provision the Regular Storage node(s): build, configure against the MP
-#    artifacts, and preload content. Skipped if no RS nodes are defined.
-if grep -q '^logos-rs' "${ROOT}/ansible/inventory.ini" 2>/dev/null; then
-  cd "${ROOT}/ansible"
-  ansible-playbook rs-playbook.yml
+release_vars="@${ROOT}/artifacts/release.json"
+ansible-playbook playbook.yml -e "$release_vars"
+if grep -q '^logos-rs' inventory.ini; then
+  ansible-playbook rs-playbook.yml -e "$release_vars"
 fi
-
-# 5. Check node health, public artifacts, and an RS-to-RS network download.
-cd "${ROOT}/ansible"
-mix_pool_url="$(terraform -chdir="${ROOT}/terraform" output -raw mix_pool_url)"
-ansible-playbook verify-playbook.yml -e "artifact_url=${mix_pool_url%/mix-pool.json}"
-
-cd "${ROOT}/terraform"
-
-echo
-echo "=== Mix-Proxy network deployed. Public artifact URLs: ==="
-terraform output -raw mix_pool_url;      echo
-terraform output -raw tcp_sprs_txt_url;  echo
-terraform output -raw tcp_sprs_json_url; echo
+ansible-playbook dashboard-playbook.yml -e "$release_vars"
+# Publish current bootstrap records for external clients; keep the previous
+# successful global version until health/discovery/transfer verification passes.
+terraform -chdir="${ROOT}/terraform" apply -input=false -auto-approve
+spr_url=$(terraform -chdir="${ROOT}/terraform" output -raw tcp_sprs_json_url)
+ansible-playbook verify-playbook.yml -e "$release_vars" -e "artifact_url=${spr_url%/tcp-sprs.json}"
+dashboard_url=$(terraform -chdir="${ROOT}/terraform" output -raw dashboard_url)
+python3 "${HERE}/verify-dashboard.py" "$dashboard_url"
+python3 - "$ROOT" <<'PY'
+import datetime,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]); release=json.loads((root/'artifacts/release.json').read_text())
+metadata={'version':release['deployment_version'], 'module_sha256':release['module_sha256'],
+          'module_url':release['module_url'], 'deployed_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+target=root/'artifacts/metadata.json'
+temp=target.with_suffix('.tmp');temp.write_text(json.dumps(metadata,indent=2)+'\n');temp.replace(target)
+PY
+terraform -chdir="${ROOT}/terraform" apply -input=false -auto-approve
+printf '\nDeployment verified. Dashboard: '
+terraform -chdir="${ROOT}/terraform" output -raw dashboard_url
+printf '\nPublic read-only dashboard; HTTPS certificate: scripts/.dashboard/server.crt\n'

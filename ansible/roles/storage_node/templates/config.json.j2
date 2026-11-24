@@ -7,8 +7,9 @@
   "mix-enabled": true,
   "autonat-server": true,
   "relay-server": true,
+  "dht-proxy-server": true,
 {% if inventory_hostname in groups['mp_bootstrap'] %}
-  "no-bootstrap-node": true
+  "bootstrap-node": []
 {% else %}
   "bootstrap-node": ["{{ bootstrap_tcp_spr }}"]
 {% endif %}

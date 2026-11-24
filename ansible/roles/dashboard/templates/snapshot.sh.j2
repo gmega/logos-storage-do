@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -uo pipefail
+service=$(systemctl is-active logoscore || true)
+version=$(cat /opt/logos/.storage-module-version 2>/dev/null || true)
+debug=$(timeout 15 {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug) ||
+  debug='{"result":{"success":false,"error":"Storage debug endpoint unavailable"}}'
+manifests=$(timeout 15 {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests) || manifests='{"result":{"success":false}}'
+jq -n --argjson manifests "$manifests" --arg service "$service" --arg version "$version" --argjson debug "$debug" \
+  '{service:$service,version:$version,debug:$debug,manifests:$manifests}'

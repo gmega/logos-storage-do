@@ -1,0 +1,27 @@
+limit_req_zone $binary_remote_addr zone=dashboard_jobs:10m rate=6r/m;
+limit_conn_zone $server_name zone=dashboard_streams:1m;
+server {
+    listen 443 ssl;
+    server_name _;
+    ssl_certificate /etc/nginx/logos-dashboard.crt;
+    ssl_certificate_key /etc/nginx/logos-dashboard.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /opt/logos-dashboard;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Cache-Control "no-store" always;
+    location = / { try_files /index.html =404; }
+    location = /health.json { alias /var/lib/logos-dashboard/health.json; }
+    client_max_body_size 1k;
+    location = /api/jobs {
+        limit_req zone=dashboard_jobs burst=2 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8787;
+    }
+    location /api/jobs/ {
+        limit_conn dashboard_streams 4;
+        limit_rate 1m;
+        proxy_buffering off;
+        proxy_pass http://127.0.0.1:8787;
+    }
+    location / { return 404; }
+}

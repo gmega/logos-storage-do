@@ -33,14 +33,22 @@
   delay: 5
   changed_when: false
 
-- name: Confirm private queries are enabled on RS nodes
+- name: Wait for populated service discovery tables
   ansible.builtin.shell: >-
     set -o pipefail;
     {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug |
-    jq --exit-status '.result.value.privateQueries == true'
+    jq --exit-status '.result.value.serviceProviders |
+    type == "object" and
+    (.["/mix/1.0.0"] | length > 0) and
+    (.["/storage/dht-proxy/1.0.0"] | length > 0) and
+    (.["/libp2p/autonat/2/dial-request"] | length > 0) and
+    (.["/libp2p/circuit/relay/0.2.0/hop"] | length > 0)'
   args:
     executable: /bin/bash
-  when: inventory_hostname in groups['rs_nodes']
+  register: discovery_health
+  until: discovery_health.rc == 0
+  retries: 60
+  delay: 5
   changed_when: false
 
 - name: Capture the running storage revision

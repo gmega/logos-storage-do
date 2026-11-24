@@ -16,7 +16,7 @@
 - name: Upload the book
   ansible.builtin.command: >
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
-    call storage_module uploadUrl {{ book_file }} {{ upload_buffer }}
+    call storage_module uploadUrl {{ book_file }} {{ upload_buffer }} true
   args:
     creates: "{{ logos_home }}/.book-uploaded"
   register: upload_book
@@ -44,7 +44,7 @@
 - name: Upload the random file
   ansible.builtin.command: >
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
-    call storage_module uploadUrl {{ random_file }} {{ upload_buffer }}
+    call storage_module uploadUrl {{ random_file }} {{ upload_buffer }} true
   args:
     creates: "{{ logos_home }}/.random-uploaded"
   register: upload_random

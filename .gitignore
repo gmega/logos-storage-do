@@ -20,3 +20,7 @@ logs/
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Local dashboard TLS material and obsolete authentication files
+scripts/.dashboard/
+__pycache__/

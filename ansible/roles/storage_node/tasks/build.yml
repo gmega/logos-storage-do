@@ -1,133 +1,108 @@
 ---
-# Installs Nix and builds the Logos toolchain + storage module on a node.
-# These builds compile Nim and can take a while, so the nix steps run async.
+- name: Require a pinned catalog release
+  ansible.builtin.assert:
+    that:
+      - deployment_version is defined
+      - module_url is defined
+      - module_sha256 is defined
 
-- name: Wait for SSH to come up
+- name: Wait for SSH
   ansible.builtin.wait_for_connection:
     timeout: 300
 
 - name: Gather facts
   ansible.builtin.setup:
 
-- name: Install OS prerequisites
+- name: Require the catalog platform selected by the controller
+  ansible.builtin.assert:
+    that: ansible_architecture == 'x86_64'
+
+- name: Install runtime prerequisites
   ansible.builtin.apt:
-    name:
-      - curl
-      - git
-      - jq
-      - xz-utils
-      - ca-certificates
-      - python3
-      - acl
-      - sudo
+    name: [curl, jq, ca-certificates, python3, acl, sudo]
     update_cache: true
     cache_valid_time: 3600
 
-- name: Create Logos directories
+- name: Create runtime directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
   loop:
     - "{{ logos_home }}"
-    - "{{ logos_build }}"
-    - "{{ logos_modules }}"
+    - "{{ logos_home }}/logosctl-{{ logosctl_version }}"
     - "{{ logos_data_dir }}"
     - "{{ logos_config_dir }}"
 
-- name: Check whether Nix is installed
-  ansible.builtin.stat:
-    path: "{{ nix_bin }}"
-  register: nix_stat
+- name: Download portable logosctl
+  ansible.builtin.get_url:
+    url: "https://github.com/logos-co/logos-logoscore-cli/releases/download/{{ logosctl_version }}/logosctl-x86_64-linux.tar.gz"
+    dest: "{{ logos_home }}/logosctl-{{ logosctl_version }}.tar.gz"
+    checksum: "sha256:{{ logosctl_sha256 }}"
+    mode: "0644"
 
-- name: Install Nix (Determinate Systems installer, flakes enabled)
-  ansible.builtin.shell: >
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix
-    | sh -s -- install linux --no-confirm --init systemd
+- name: Unpack portable CLI
+  ansible.builtin.unarchive:
+    src: "{{ logos_home }}/logosctl-{{ logosctl_version }}.tar.gz"
+    dest: "{{ logos_home }}/logosctl-{{ logosctl_version }}"
+    remote_src: true
+    creates: "{{ logos_home }}/logosctl-{{ logosctl_version }}/logosctl-x86_64.AppImage"
+
+- name: Extract AppImage so no FUSE is needed
+  ansible.builtin.command: ./logosctl-x86_64.AppImage --appimage-extract
   args:
-    creates: "{{ nix_bin }}"
-  when: not nix_stat.stat.exists
-
-- name: Ensure nix-daemon is running
-  ansible.builtin.systemd:
-    name: nix-daemon
-    state: started
-    enabled: true
-
-- name: Build the Logos Core CLI (provides logoscore)
-  ansible.builtin.command: >
-    {{ nix_bin }} {{ nix_flags }}
-    build github:logos-co/logos-logoscore-cli/{{ logos_cli_ref }}
-    --out-link {{ logos_build }}/logos
-  args:
+    chdir: "{{ logos_home }}/logosctl-{{ logosctl_version }}"
     creates: "{{ logos_bin }}"
-  async: "{{ nix_build_timeout }}"
-  poll: "{{ nix_build_poll }}"
 
-- name: Build the Logos Package Manager (provides lgpm)
-  ansible.builtin.command: >
-    {{ nix_bin }} {{ nix_flags }}
-    build github:logos-co/logos-package-manager/{{ logos_pkgmgr_ref }}#cli
-    --out-link {{ logos_build }}/package-manager
+# logosctl 0.3.2 eagerly loads its bundled downloader and storage module.
+# Keep both outside its scan path: downloads are performed by Ansible and
+# package_manager installs the verified local LGX without package_downloader.
+- name: Preserve bundled modules outside the runtime scan path
+  ansible.builtin.command:
+    argv:
+      - mv
+      - "{{ logos_home }}/logosctl-{{ logosctl_version }}/squashfs-root/usr/modules-pkg/{{ item.name }}"
+      - "{{ logos_home }}/logosctl-{{ logosctl_version }}/{{ item.backup }}"
   args:
-    creates: "{{ lgpm_bin }}"
-  async: "{{ nix_build_timeout }}"
-  poll: "{{ nix_build_poll }}"
+    creates: "{{ logos_home }}/logosctl-{{ logosctl_version }}/{{ item.backup }}"
+  loop:
+    - {name: storage_module, backup: bundled-storage-module}
+    - {name: package_downloader, backup: bundled-package-downloader}
 
-- name: Build the Logos Storage Module
-  ansible.builtin.command: >
-    {{ nix_bin }} {{ nix_flags }}
-    build github:logos-co/logos-storage-module/{{ storage_module_ref }}#lgx
-    --override-input logos-storage
-    git+https://github.com/logos-storage/logos-storage-nim?ref={{ libstorage_ref }}&submodules=1
-    --refresh --print-out-paths
-    --out-link {{ logos_build }}/storage-module
-  async: "{{ nix_build_timeout }}"
-  poll: "{{ nix_build_poll }}"
-  register: storage_module_build
-  changed_when: false
+- name: Download exact catalog module and verify its digest
+  ansible.builtin.get_url:
+    url: "{{ module_url }}"
+    dest: "{{ logos_home }}/storage-{{ deployment_version }}.lgx"
+    checksum: "sha256:{{ module_sha256 }}"
+    mode: "0644"
 
-# Compare the actual Nix output, so changing either ref (or advancing a branch)
-# replaces the installed module. A directory-exists guard would skip upgrades.
-- name: Read the previously installed module build
-  ansible.builtin.command: "cat {{ logos_home }}/.storage-module-build"
-  register: installed_module_build
-  failed_when: false
-  changed_when: false
-
-- name: Check the installed module
-  ansible.builtin.stat:
-    path: "{{ logos_modules }}/storage_module"
-  register: installed_module
-
-- name: Determine whether the module needs installing
-  ansible.builtin.set_fact:
-    storage_module_changed: >-
-      {{ not installed_module.stat.exists or
-         (installed_module_build.stdout | trim) != (storage_module_build.stdout | trim) }}
-
-- name: Gather service state before replacing the module
+- name: Gather existing services
   ansible.builtin.service_facts:
-  when: storage_module_changed
 
-- name: Stop the daemon before replacing its loaded libraries
+- name: Stop existing runtime before replacing the module
   ansible.builtin.systemd:
     name: logoscore
     state: stopped
-  when:
-    - storage_module_changed
-    - "'logoscore.service' in ansible_facts.services"
+  when: "'logoscore.service' in ansible_facts.services"
 
-- name: Install the Storage Module into the modules directory
-  ansible.builtin.command: >
-    {{ lgpm_bin }} --modules-dir {{ logos_modules }}
-    install --dir {{ logos_build }}/storage-module
-  when: storage_module_changed
-  register: lgpm_install
+- name: Install the module using a temporary package-management daemon
+  block:
+    - name: Start package-management daemon
+      ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} daemon start --detach"
+    - name: Install the verified precompiled package
+      ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} install {{ logos_home }}/storage-{{ deployment_version }}.lgx -y"
+  always:
+    - name: Stop temporary daemon
+      ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} daemon stop"
 
-- name: Record the installed module build
+- name: Record installed catalog version
   ansible.builtin.copy:
-    content: "{{ storage_module_build.stdout | trim }}\n"
-    dest: "{{ logos_home }}/.storage-module-build"
+    content: "{{ deployment_version }}\n"
+    dest: "{{ logos_home }}/.storage-module-version"
     mode: "0644"
-  when: storage_module_changed
+
+- name: Expose logosctl for operators
+  ansible.builtin.file:
+    src: "{{ logos_bin }}"
+    dest: /usr/local/bin/logosctl
+    state: link

@@ -23,11 +23,6 @@ output "bucket_endpoint" {
   value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com"
 }
 
-output "mix_pool_url" {
-  description = "Public URL for mix-pool.json (available after the publish apply)."
-  value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.mix_pool_key}"
-}
-
 output "tcp_sprs_txt_url" {
   description = "Public URL for the newline-delimited TCP SPR list (available after the publish apply)."
   value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.tcp_spr_key}"
@@ -36,4 +31,9 @@ output "tcp_sprs_txt_url" {
 output "tcp_sprs_json_url" {
   description = "Public URL for the JSON TCP SPR list (available after the publish apply)."
   value       = "https://${digitalocean_spaces_bucket.artifacts.name}.${var.region}.digitaloceanspaces.com/${local.tcp_json_key}"
+}
+
+output "dashboard_url" {
+  description = "Public read-only HTTPS dashboard (self-signed certificate)."
+  value       = "https://${digitalocean_droplet.mp[0].ipv4_address}/"
 }

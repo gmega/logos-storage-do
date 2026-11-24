@@ -1,10 +1,10 @@
 ---
-# Logos Storage v0.2 — Mix-Proxy network provisioning.
+# Logos Storage v0.4 — Mix-Proxy network provisioning.
 #
 # Phases run in order. The bootstrap node (node 1) must be up before the
 # followers are configured, because followers bootstrap off its TCP SPR.
 
-- name: "Phase 1 — Build Logos toolchain + storage module (all nodes)"
+- name: "Phase 1 — Install precompiled Logos toolchain + storage module (all nodes)"
   hosts: mp_nodes
   gather_facts: false
   any_errors_fatal: true

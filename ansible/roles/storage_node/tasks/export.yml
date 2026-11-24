@@ -1,13 +1,5 @@
 ---
-# Exports per-node mix info and SPRs, then fetches them back to the controller.
-# Controller layout: artifacts/raw/<index>/{mixinfo.json,tcp-spr.txt}
-
-- name: Copy mix_helper.py to the node
-  ansible.builtin.copy:
-    src: mix_helper.py
-    dest: "{{ mix_helper }}"
-    mode: "0755"
-
+# Export bootstrap records; service providers are discovered dynamically.
 - name: Capture storage module debug output
   ansible.builtin.command: "{{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module debug"
   register: debug_out
@@ -19,27 +11,18 @@
     dest: "{{ logos_home }}/debug.json"
     mode: "0644"
 
-- name: Export mix info (mixinfo.json)
-  ansible.builtin.shell: >
-    python3 {{ mix_helper }} export
-    --input {{ logos_home }}/debug.json
-    --output {{ logos_home }}/mixinfo.json
-  changed_when: false
-
 - name: Extract TCP SPR
   ansible.builtin.shell: >-
     jq --exit-status --raw-output '.result.value.spr | select(type == "string" and startswith("spr:"))'
     {{ logos_home }}/debug.json > {{ logos_home }}/tcp-spr.txt
   changed_when: false
 
-- name: Fetch mixinfo.json to controller
-  ansible.builtin.fetch:
-    src: "{{ logos_home }}/mixinfo.json"
-    dest: "{{ playbook_dir }}/../artifacts/raw/{{ node_index }}/mixinfo.json"
-    flat: true
-
 - name: Fetch TCP SPR to controller
   ansible.builtin.fetch:
     src: "{{ logos_home }}/tcp-spr.txt"
     dest: "{{ playbook_dir }}/../artifacts/raw/{{ node_index }}/tcp-spr.txt"
     flat: true
+
+- name: Keep this node's bootstrap record for the merge
+  ansible.builtin.set_fact:
+    tcp_spr: "{{ (debug_out.stdout | from_json).result.value.spr }}"

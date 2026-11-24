@@ -8,3 +8,5 @@ node_count   = 4
 ssh_key_name = "giulianos-public-key-2"
 bucket_name  = "logos-storage-network"
 name_prefix  = "logos-mp"
+
+version_prefix = "v0.4"

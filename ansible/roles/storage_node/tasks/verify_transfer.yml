@@ -1,13 +1,22 @@
 ---
+- name: Allocate a fresh verification filename for this run
+  ansible.builtin.tempfile:
+    state: file
+    path: "{{ logos_home }}"
+    prefix: verify-source-
+    suffix: .bin
+  register: transfer_sample
+  when: inventory_hostname == groups['rs_nodes'][0]
+
 - name: Prepare a 1 MiB sample unique to the first RS node
   ansible.builtin.command: >-
-    dd if={{ random_file }} of={{ logos_home }}/verify-source.bin bs=1M count=1
+    dd if=/dev/urandom of={{ transfer_sample.path }} bs=1M count=1
   when: inventory_hostname == groups['rs_nodes'][0]
 
 - name: Upload the verification sample
   ansible.builtin.command: >-
     {{ logos_bin }} --config-dir={{ logos_config_dir }}
-    call storage_module uploadUrl {{ logos_home }}/verify-source.bin {{ upload_buffer }}
+    call storage_module uploadUrl {{ transfer_sample.path }} {{ upload_buffer }} true
   when: inventory_hostname == groups['rs_nodes'][0]
 
 - name: Wait for the verification sample manifest
@@ -15,7 +24,7 @@
     set -o pipefail;
     {{ logos_bin }} --config-dir={{ logos_config_dir }} call storage_module manifests |
     jq --exit-status --raw-output
-    '.result.value[] | select(.filename == "verify-source.bin") | .cid'
+    '.result.value[] | select(.filename == "{{ transfer_sample.path | basename }}") | .cid'
   args:
     executable: /bin/bash
   register: transfer_cid
@@ -27,7 +36,7 @@
 
 - name: Hash the source sample
   ansible.builtin.stat:
-    path: "{{ logos_home }}/verify-source.bin"
+    path: "{{ transfer_sample.path }}"
     checksum_algorithm: sha256
   register: transfer_source
   when: inventory_hostname == groups['rs_nodes'][0]
@@ -44,6 +53,8 @@
       - "{{ logos_home }}/verify-transfer.bin"
       - "false"
       - "{{ upload_buffer | string }}"
+      - "true"
+      - "false"
   register: transfer_download
   failed_when: not (transfer_download.stdout | from_json).result.success
   until: (transfer_download.stdout | from_json).result.success

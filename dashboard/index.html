@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logos · Network health</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#10141d;color:#e8edf5}*{box-sizing:border-box}body{max-width:1440px;margin:auto;padding:36px}header{display:flex;justify-content:space-between;align-items:center;gap:24px;border-bottom:1px solid #30394a;padding-bottom:24px}h1{font-size:2rem;letter-spacing:-.04em;margin:4px 0}h2{font-size:1.2rem;margin:0}.eyebrow{color:#a8bcde;font-size:.875rem;letter-spacing:.12em}p{margin:6px 0;color:#b1bfd1}button,select{font:inherit;color:inherit;background:#202c40;border:1px solid #4b607e;border-radius:8px;padding:9px 16px;cursor:pointer}button:focus-visible,summary:focus-visible{outline:2px solid #8dc0ff;outline-offset:4px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:24px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}.card{border:1px solid #344057;background:#171e2a;border-radius:12px;padding:24px}.top{display:flex;justify-content:space-between;gap:12px}.pill{font-size:.875rem;padding:3px 10px;border-radius:20px;background:#24394a;color:#c4d9f2;align-self:start}.good{background:#173f34;color:#8de2b9}.warn{background:#493a1b;color:#f9d585}.bad{background:#4b2631;color:#ffafbc}.stats{display:flex;gap:24px;margin:24px 0}.stat b{display:block;font-size:1.7rem}.stat span,.meta{font-size:.875rem;color:#b1bfd1}.services{display:grid;gap:8px;margin:14px 0}details{border-top:1px solid #344057;padding:12px 0}summary{cursor:pointer;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;max-height:400px;overflow:auto;background:#10141d;padding:16px;border-radius:6px}code{overflow-wrap:anywhere}.error{color:#ffafbc}#notice{padding:12px 0}footer{margin:28px 0;color:#a3b2c7;font-size:.875rem}@media(max-width:600px){body{padding:20px}header{align-items:start}.top{flex-wrap:wrap}.toolbar{align-items:start;flex-direction:column}}
+.files{margin:20px 0;padding:16px;border:1px solid #344057;border-radius:8px}.file-row{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer}.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:#ff7d90}.dot.present{background:#71d9a5}.dot.unknown{background:#b1bfd1}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{padding:8px 12px;font-size:.875rem}button:disabled{opacity:.45;cursor:not-allowed}.job{font-size:.875rem;overflow-wrap:anywhere}a{color:#9dcaff}
+.detailed-status{border:1px solid #344057;border-radius:8px;padding:14px 16px;margin-top:16px}.detailed-status>summary{font-weight:600}.detailed-status[open]>summary{margin-bottom:12px}
+</style>
+<header><div><div class="eyebrow">LOGOS / STORAGE NETWORK</div><h1>Network health</h1><p>Live node status and discovered service providers</p></div><button id="refresh">Refresh</button></header>
+<div class="toolbar"><strong id="summary">Connecting…</strong><span class="meta" id="updated">Snapshots refresh every 30 seconds</span></div>
+<div id="notice" role="status" aria-live="polite"></div><main class="grid" id="nodes"></main>
+<footer>Dashboard v1.1 · File actions are restricted to the two listed datasets. Provider lists come directly from each node’s debug endpoint. Empty or stale tables need attention.</footer>
+<script>
+const $=id=>document.getElementById(id);
+function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
+function detail(title,value){const d=el('details');d.append(el('summary',title),el('pre',JSON.stringify(value,null,2)));return d}
+function serviceName(id){if(id.includes('autonat'))return 'AutoNAT';if(id.includes('circuit'))return 'Circuit relay';if(id.includes('dht')&&id.includes('proxy'))return 'DHT proxy';if(id.includes('mix'))return 'Mix relay';return id}
+let latestSnapshot=null;
+function render(data){latestSnapshot=data;const age=Math.max(0,Math.floor(Date.now()/1000-data.updatedAt)),stale=age>90;let healthy=0;const cards=[];for(const n of data.nodes){const d=n.debug||{}, providers=d.serviceProviders||{},card=el('article',undefined,'card');const good=n.ok&&n.discoveryReady&&!stale;if(good)healthy++;const top=el('div',undefined,'top'),title=el('div');title.append(el('h2',n.name),el('div',`${n.role} · ${n.ip}`,'meta'));top.append(title,el('span',stale?'Stale':!n.ok?'Unavailable':n.discoveryAvailable===false?'Discovery not exposed':!n.discoveryReady?'Discovery incomplete':'Healthy','pill '+(good?'good':n.ok?'warn':'bad')));card.append(top);const stats=el('div',undefined,'stats');for(const [label,value]of [['DHT peers',d.table?.nodes?.length??'—'],['Connections',d.connections?.length??'—'],['Services',Object.keys(providers).length]]){const stat=el('div',undefined,'stat');stat.append(el('b',String(value)),el('span',label));stats.append(stat)}card.append(stats,el('div',`Version ${n.version||d.storage?.version||'unknown'}`,'meta'),el('div',`Reachability: ${d.nat?.reachability||'unknown'} · Service: ${n.service||'unknown'}`,'meta'));if(n.error)card.append(el('p',n.error,'error'));const services=el('div',undefined,'services');if(!Object.keys(providers).length)services.append(el('p',n.discoveryAvailable===false?'This build does not expose provider tables in debug.':'No discovered providers reported.','error'));for(const [id,peers]of Object.entries(providers)){const detailNode=detail(`${serviceName(id)} · ${peers.length} providers`,peers);detailNode.title=id;services.append(detailNode)}const detailed=el('details',undefined,'detailed-status');detailed.id=`details-${n.name}`;detailed.open=$(detailed.id)?.open||false;detailed.append(el('summary','Detailed status'),services,detail('Peer identity & addresses',{id:d.id,addrs:d.addrs,spr:d.spr}),detail('DHT routing table',d.table||{}),detail('Connections',d.connections||[]),detail('Full debug response',d));card.append(filePanel(n,data.files||[]),detailed);cards.push(card)}$('nodes').replaceChildren(...cards);$('summary').textContent=`${healthy} / ${data.nodes.length} nodes healthy`;$('updated').textContent=`Updated ${new Date(data.updatedAt*1000).toLocaleString()} · ${age}s ago`;$('notice').textContent=stale?'Snapshots are stale. The collector may be unavailable.':''}
+const selections=new Map(),jobs=new Map(),confirmedDeletions=new Map();
+function filePresence(n,file){
+ const key=`${n.name}:${file.cid}`,deletedAt=confirmedDeletions.get(key);
+ const known=Array.isArray(n.manifests);
+ if(deletedAt!==undefined){
+  // checkedAt is collection start: only a later successful snapshot can supersede deletion.
+  if(known&&n.checkedAt>deletedAt)confirmedDeletions.delete(key);
+  else return {known:true,present:false};
+ }
+ return {known,present:known&&n.manifests.some(m=>m.cid===file.cid)};
+}
+function filePanel(n,files){
+ const panel=el('section',undefined,'files');panel.append(el('strong','Files'));
+ const selected=selections.get(n.name)||files[0]?.id;selections.set(n.name,selected);
+ for(const f of files){const row=el('label',undefined,'file-row'),radio=el('input');radio.type='radio';radio.name=`file-${n.name}`;radio.value=f.id;radio.checked=f.id===selected;radio.onchange=()=>selections.set(n.name,f.id);
+ const {known,present}=filePresence(n,f),status=known?(present?'Present':'Absent'):'Unknown';const dot=el('span',undefined,'dot '+(known?(present?'present':''):'unknown'));dot.title=status;dot.setAttribute('aria-label',status);row.append(radio,dot,el('span',f.label),el('span',status,'meta'));panel.append(row)}
+ const actions=el('div',undefined,'actions'),status=el('p',undefined,'job');status.setAttribute('role','status');
+ for(const [action,label]of [['direct','Download direct'],['mix','Download via Mix'],['delete','Delete']]){const b=el('button',label);b.disabled=jobs.get(n.name)?.state==='running'||(action==='delete'&&n.protected)||!files.length;b.onclick=()=>startJob(n,action);actions.append(b)}
+ panel.append(actions,status);const job=jobs.get(n.name);if(job){status.textContent=job.message;if(job.url){const link=el('a','Open file');link.href=job.url;link.target='_blank';link.rel='noopener';status.append(' · ',link)}}
+ if(n.protected)panel.append(el('p','Source node: deletion is disabled.','meta'));panel.append(el('p','Presence is based on manifests. Cached data may satisfy either download mode.','meta'));return panel
+}
+function downloadView(viewer,node,file,action){
+ if(!viewer)return null;
+ viewer.opener=null;const doc=viewer.document;doc.title='Logos · Download';
+ const style=doc.createElement('style');style.textContent=`:root{color-scheme:dark;font:16px/1.6 system-ui,sans-serif;background:#10141d;color:#e8edf5}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:min(100%,600px);padding:36px;border:1px solid #344057;border-radius:16px;background:#171e2a}small{color:#a8bcde;letter-spacing:.1em}h1{font-size:1.7rem;line-height:1.25;margin:18px 0}p{color:#b1bfd1;overflow-wrap:anywhere}progress{display:block;width:100%;height:14px;margin:24px 0 12px;accent-color:#82b7ff}strong{font-variant-numeric:tabular-nums}.error{color:#ffafbc}a{color:#9dcaff}`;doc.head.append(style);
+ doc.body.innerHTML='<main><small>LOGOS / STORAGE DOWNLOAD</small><h1></h1><p id="route"></p><progress max="100" aria-label="Downloaded on node"></progress><strong id="amount">Connecting to node…</strong><p id="phase" role="status" aria-live="polite">Preparing your download.</p><p>The file will open automatically when it is ready.</p></main>';
+ doc.querySelector('h1').textContent=file?.label||'Download';doc.getElementById('route').textContent=`${node.name} · ${action==='mix'?'Via Mix':'Direct download'}`;
+ return doc;
+}
+function updateDownloadView(doc,job){
+ if(!doc)return;
+ const total=job.totalBytes||0,bytes=job.nodeBytes||0,pct=total?Math.min(100,bytes/total*100):0;
+ const bar=doc.querySelector('progress');if(job.phase==='connecting')bar.removeAttribute('value');else bar.value=pct;
+ const mib=n=>(n/1048576).toFixed(1)+' MiB';
+ doc.getElementById('amount').textContent=`${pct.toFixed(0)}% · ${mib(bytes)} / ${mib(total)} on node`;
+ const descriptions={'connecting':'Connecting to the selected node…','downloading':'Downloading the file on the node…','verifying-node':'Verifying the completed file on the node…','copying':`Copying to the dashboard: ${mib(job.dashboardBytes||0)} / ${mib(total)}…`,'verifying-dashboard':'Verifying the dashboard copy…','ready':'Ready. Opening your file…'};
+ doc.getElementById('phase').textContent=descriptions[job.phase]||'Working…';
+}
+async function startJob(n,action){
+ const file=selections.get(n.name),viewer=action==='delete'?null:window.open('','_blank');const downloadDoc=downloadView(viewer,n,latestSnapshot?.files.find(f=>f.id===file),action);
+ jobs.set(n.name,{state:'running',message:action==='delete'?'Removing file…':'Downloading on node…'});await refresh();
+ try{const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard-Request':'1'},body:JSON.stringify({node:n.name,file,action})});const body=await r.json();if(!r.ok)throw Error(body.error||`HTTP ${r.status}`);
+ for(;;){await new Promise(resolve=>setTimeout(resolve,2000));const poll=await fetch(`/api/jobs/${body.id}`,{cache:'no-store'});const job=await poll.json();if(!poll.ok||job.state==='failed')throw Error(job.error||'Job unavailable');if(viewer&&!viewer.closed)updateDownloadView(downloadDoc,job);if(job.state==='ready'){if(action==='delete'){const removed=latestSnapshot?.files.find(f=>f.id===file);if(removed)confirmedDeletions.set(`${n.name}:${removed.cid}`,Date.parse(poll.headers.get('Date'))/1000||Date.now()/1000)}const url=action==='delete'?null:`/api/jobs/${body.id}/content`;jobs.set(n.name,{state:'ready',message:action==='delete'?'Removed from this node.':'Ready. Open the file below (available for 15 minutes).',url});if(latestSnapshot)render(latestSnapshot);if(url&&viewer&&!viewer.closed)viewer.location.replace(url);break}}
+ }catch(e){if(viewer&&!viewer.closed){const status=downloadDoc.getElementById('phase');status.className='error';status.textContent=`Download failed: ${e.message}`;downloadDoc.querySelector('progress').hidden=true;downloadDoc.getElementById('amount').textContent='Download could not finish';}jobs.set(n.name,{state:'failed',message:e.message})}await refresh()
+}
+let busy=false;async function refresh(){if(busy)return;busy=true;$('refresh').disabled=true;try{const r=await fetch('/health.json',{cache:'no-store'});if(!r.ok)throw Error(`HTTP ${r.status}`);render(await r.json())}catch(e){$('notice').textContent=`Cannot refresh node health: ${e.message}. Displayed data may be stale.`}finally{busy=false;$('refresh').disabled=false}}
+$('refresh').onclick=refresh;refresh();setInterval(refresh,30000);
+</script></html>
