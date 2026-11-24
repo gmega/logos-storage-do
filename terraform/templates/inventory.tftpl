@@ -3,7 +3,7 @@
 
 [mp_nodes]
 %{ for n in nodes ~}
-${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip}
+${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip} node_location='${n.location}'
 %{ endfor ~}
 
 [mp_bootstrap]
@@ -22,7 +22,7 @@ ${n.name}
 
 [rs_nodes]
 %{ for n in rs_nodes ~}
-${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip}
+${n.name} ansible_host=${n.ip} node_index=${n.index} public_ip=${n.ip} node_location='${n.location}'
 %{ endfor ~}
 
 [all:vars]
