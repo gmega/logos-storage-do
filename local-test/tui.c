@@ -1,4 +1,8 @@
 #define _GNU_SOURCE
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 #include <ncurses.h>
 #include <fcntl.h>
 #include <locale.h>
@@ -124,7 +128,13 @@ static void interrupt(int sig) { (void)sig; interrupted=1; }
 
 int main(void) {
     char *root = getenv("LOGOS_DEVNET_HOME"), *base = getenv("XDG_DATA_HOME");
+#ifdef __APPLE__
+    char path[PATH_MAX];
+    uint32_t length=sizeof path;
+    char *executable=_NSGetExecutablePath(path,&length)==0 ? realpath(path,NULL) : NULL;
+#else
     char *executable = realpath("/proc/self/exe", NULL);
+#endif
     if (!root && executable) {
         char *slash = strrchr(executable, '/');
         *slash = 0;

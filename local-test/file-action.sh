@@ -2,10 +2,21 @@
 set -euo pipefail
 umask 077
 exec 8>file-action.lock
-flock -n 8 || { echo "A file operation is already running"; exit 1; }
+if [[ $(uname -s) == Darwin ]]; then
+    lock_file() { perl -MFcntl=:flock -e 'open(my $fd, ">&=8") or die $!; exit !flock($fd, LOCK_EX|LOCK_NB)'; }
+    bounded_cli() { perl -e 'alarm 35; exec @ARGV or die $!' ./runtime/AppRun "$@"; }
+    file_size() { stat -f %z "$1"; }
+    verify_file() { shasum -a 256 -c >/dev/null; }
+else
+    lock_file() { flock -n 8; }
+    bounded_cli() { timeout 35 ./runtime/AppRun "$@"; }
+    file_size() { stat -c %s "$1"; }
+    verify_file() { sha256sum --check --status; }
+fi
+lock_file || { echo "A file operation is already running"; exit 1; }
 
 call() {
-    timeout 35 ./runtime/AppRun "--config-dir=$PWD/session" call storage_module "$@" |
+    bounded_cli "--config-dir=$PWD/session" call storage_module "$@" |
         jq -ce '.result | if .success then .value else error(.error // "Storage operation failed") end'
 }
 if [[ $ACTION == delete ]]; then
@@ -32,21 +43,21 @@ cleanup() {
 }
 trap cleanup EXIT
 private=false
-advertise=true
-if [[ $ACTION == mix ]]; then private=true; advertise=false; fi
+if [[ $ACTION == mix ]]; then private=true; fi
 echo "Starting $ACTION download..."
 pending=true
-call downloadToUrl "$CID" "$stage/payload" false 65536 "$private" "$advertise" >/dev/null
+call downloadToUrl "$CID" "$stage/payload" false 65536 "$private" false >/dev/null
 for ((i=0; i<300; i++)); do
-    bytes=$(stat -c %s "$stage/payload" 2>/dev/null || echo 0)
+    bytes=$(file_size "$stage/payload" 2>/dev/null || echo 0)
     echo "$ACTION download: $((bytes*100/SIZE))%  ($bytes / $SIZE bytes)"
     if [[ $bytes == "$SIZE" ]]; then
         echo "Verifying SHA-256..."
-        if ! (cd "$stage" && echo "$DIGEST  payload" | sha256sum --check --status); then
+        if ! (cd "$stage" && echo "$DIGEST  payload" | verify_file); then
             echo "SHA-256 mismatch. Download discarded."
             exit 1
         fi
-        mv -fT "$stage/payload" "downloads/$NAME"
+        [[ ! -d "downloads/$NAME" ]] || exit 1
+        mv -f "$stage/payload" "downloads/$NAME"
         pending=false
         echo "Saved downloads/$NAME"
         exit 0

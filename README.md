@@ -106,6 +106,16 @@ cd ansible
 ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json
 ```
 
+## Join Devnet
+
+The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
+
+```bash
+scripts/publish-join-installer.sh /path/to/extracted/install.sh
+```
+
+To update the portal pages and routes on an existing dashboard, run `ansible-playbook dashboard-playbook.yml --tags portal --limit mp_bootstrap` from `ansible/`.
+
 ## Bootstrap artifacts and client configuration
 
 The bucket publishes `v0.4/tcp-sprs.json` and `v0.4/tcp-sprs.txt` as bootstrap
