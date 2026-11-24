@@ -1,0 +1,30 @@
+name: Build devnet TUI
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'local-test/**'
+      - '.github/workflows/local-test-tui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq libncurses-dev
+      - name: Build Linux x86-64 TUI and installer
+        run: local-test/build.sh
+      - name: Upload downloadable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: logos-devnet-linux-x86_64
+          path: artifacts/local-test/logos-devnet-linux-x86_64.tar.gz
+          if-no-files-found: error
+          compression-level: 0
