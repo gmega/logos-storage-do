@@ -1,0 +1,20 @@
+[
+  {
+    "id": "random",
+    "label": "Random file · 200 MiB",
+    "filename": "random-200mb.bin",
+    "size": 209715200,
+    "sha256": "17765fec36c5c95c03754c9c0b1980a5c86778b6aca8eeddab3bf9845d12884d",
+    "type": "application/octet-stream",
+    "cid": "zDvZRwzm3FK5kvm4Yib5mNLeAQRJMkv8rtyTBWRzcXFBH1LyEKq6"
+  },
+  {
+    "id": "book",
+    "label": "Farewell to Westphalia",
+    "filename": "farewell-to-westphalia-foss-edition.pdf",
+    "size": 2276462,
+    "sha256": "718c742072f31f5f2cf26f834c6feea52aa2deee86117aaff6b81f08944310c2",
+    "type": "application/pdf",
+    "cid": "zDvZRwzkzrrYB6sS1rRpRLt4gBhc1pWoyTSjkfszfmj1seaYYLCZ"
+  }
+]
