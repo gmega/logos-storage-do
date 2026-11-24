@@ -93,7 +93,11 @@ tar xf cli.tar.gz
 if [[ $platform == macos-arm64 ]]; then
   runtime=logosctl-aarch64-macos
   mv "$runtime"/modules-pkg/{storage_module,package_downloader} .
-  ln -s bin/logosctl "$runtime/AppRun"
+  cat >"$runtime/AppRun" <<'LAUNCH'
+#!/bin/sh
+exec "$(dirname "$0")/bin/logosctl" "$@"
+LAUNCH
+  chmod 755 "$runtime/AppRun"
 else
   ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
   runtime=squashfs-root
@@ -103,11 +107,23 @@ if [[ ! -e "$root/runtime" ]]; then mv "$runtime" "$root/runtime"; fi
 mkdir -p "$root"/{session,data,home}
 # Some modules use HOME for their own files. Isolate them from existing nodes.
 export HOME="$root/home"
-"$cli" "$session" daemon start --detach 9>&-
-started=true
-"$cli" "$session" install "$stage/storage.lgx" -y
-"$cli" "$session" daemon stop
-started=false
+if [[ $platform == macos-arm64 ]]; then
+  # Match the installed LGX layout used by the module loader.
+  mkdir package
+  tar -xzf storage.lgx -C package manifest.json assets variants/darwin-arm64
+  module=package/variants/darwin-arm64
+  test -f "$module/storage_module_plugin.dylib"
+  mv package/manifest.json package/assets "$module/"
+  printf %s darwin-arm64 >"$module/variant"
+  mkdir -p "$root/session/modules"
+  mv "$module" "$root/session/modules/storage_module"
+else
+  "$cli" "$session" daemon start --detach 9>&-
+  started=true
+  "$cli" "$session" install "$stage/storage.lgx" -y
+  "$cli" "$session" daemon stop
+  started=false
+fi
 jq -n --arg data "$root/data" --slurpfile sprs sprs '{
   "data-dir":$data, "log-level":"DEBUG", "listen-ip":"0.0.0.0",
   "listen-port":8090, "mix-enabled":true, "bootstrap-node":$sprs[0]
