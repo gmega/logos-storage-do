@@ -111,7 +111,14 @@
         src: "../dashboard/{{ item }}"
         dest: "/opt/logos-dashboard/{{ item }}"
         mode: '0644'
-      loop: [index.html, collector.py, server.py]
+      loop: [collector.py, server.py]
+    - name: Install Devnet Portal pages
+      tags: [portal]
+      ansible.builtin.copy:
+        src: "../dashboard/{{ item }}"
+        dest: "/opt/logos-dashboard/{{ item }}"
+        mode: '0644'
+      loop: [index.html, join.html]
     - name: Write node list
       ansible.builtin.copy:
         dest: /opt/logos-dashboard/nodes.json
@@ -168,7 +175,7 @@
         dest: ../scripts/.dashboard/server.crt
         flat: true
     - name: Install nginx virtual host
-      tags: [dashboard_access]
+      tags: [dashboard_access, portal]
       ansible.builtin.template:
         src: roles/dashboard/templates/nginx.conf.j2
         dest: /etc/nginx/sites-enabled/logos-dashboard
@@ -178,7 +185,7 @@
         path: /etc/nginx/sites-enabled/default
         state: absent
     - name: Validate nginx configuration
-      tags: [dashboard_access]
+      tags: [dashboard_access, portal]
       ansible.builtin.command: nginx -t
       changed_when: false
     - name: Install collector service
@@ -247,6 +254,11 @@
       ansible.builtin.systemd:
         name: logos-dashboard.service
         state: started
+    - name: Reload portal routes on a running dashboard
+      tags: [never, portal]
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
     - name: Enable HTTPS dashboard
       tags: [dashboard_access]
       ansible.builtin.systemd:
@@ -254,9 +266,9 @@
         enabled: true
         state: restarted
     - name: Confirm public dashboard endpoints are available
-      tags: [dashboard_access]
+      tags: [dashboard_access, portal]
       ansible.builtin.uri:
         url: "https://{{ public_ip }}{{ item }}"
         validate_certs: false
         status_code: 200
-      loop: ["/", "/health.json"]
+      loop: ["/", "/join", "/health.json"]
