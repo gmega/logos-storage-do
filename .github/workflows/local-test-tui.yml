@@ -12,19 +12,35 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+          - runner: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install build dependencies
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential jq libncurses-dev
-      - name: Build Linux x86-64 TUI and installer
+      - name: Build native TUI and installer
         run: local-test/build.sh
+      - name: Exercise macOS installer and node controls
+        if: runner.os == 'macOS'
+        timeout-minutes: 8
+        run: |
+          export LOGOS_DEVNET_HOME="$RUNNER_TEMP/portal-node"
+          cat artifacts/local-test/install.sh | /bin/bash
+          python3 local-test/smoke-macos.py "$LOGOS_DEVNET_HOME"
       - name: Upload downloadable bundle
         uses: actions/upload-artifact@v4
         with:
-          name: logos-devnet-linux-x86_64
-          path: artifacts/local-test/logos-devnet-linux-x86_64.tar.gz
+          name: logos-devnet-${{ matrix.platform }}
+          path: artifacts/local-test/logos-devnet-${{ matrix.platform }}.tar.gz
           if-no-files-found: error
           compression-level: 0

@@ -2,7 +2,13 @@
 # Install the v0.4 devnet runtime for the current user.
 set -euo pipefail
 umask 077
-[[ $(uname -sm) == 'Linux x86_64' ]] || { echo 'Requires Linux x86-64' >&2; exit 1; }
+case "$(uname -sm)" in
+  'Linux x86_64') platform=linux-x86_64 ;;
+  'Darwin arm64') platform=macos-arm64
+    [[ $(sw_vers -productVersion | cut -d. -f1) -ge 14 ]] || { echo 'Requires macOS 14 or newer' >&2; exit 1; } ;;
+  *) echo 'Requires Linux x86-64 or macOS on Apple Silicon' >&2; exit 1 ;;
+esac
+[[ ${bundle_platform:-$platform} == "$platform" ]] || { echo "Use the $platform installer from Join Devnet" >&2; exit 1; }
 if ! declare -F unpack_tui >/dev/null; then
   script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 fi
@@ -19,7 +25,8 @@ stage_tui() {
   chmod 755 logos-devnet
 }
 finish_tui() {
-  mv -fT -- logos-devnet "$root/logos-devnet"
+  [[ ! -d "$root/logos-devnet" ]] || return 1
+  mv -f logos-devnet "$root/logos-devnet"
   printf 'Launch the TUI with %q\n' "$root/logos-devnet"
 }
 main() {
@@ -28,7 +35,14 @@ mkdir -p "$root"
 cd "$root"
 root=$PWD
 exec 9>install.lock
-flock -n 9 || { echo 'Another installation is running' >&2; exit 1; }
+lock_install() {
+  if [[ $platform == macos-arm64 ]]; then
+    perl -MFcntl=:flock -e 'open(my $fd, ">&=9") or die $!; exit !flock($fd, LOCK_EX|LOCK_NB)'
+  else
+    flock -n 9
+  fi
+}
+lock_install || { echo 'Another installation is running' >&2; exit 1; }
 stage=$(mktemp -d "$root/.setup.XXXXXX")
 cli="$root/runtime/AppRun"
 session="--config-dir=$root/session"
@@ -41,7 +55,13 @@ trap cleanup EXIT
 cd "$stage"
 stage_tui
 fetch() { curl --fail --location --silent --show-error --retry 2 "$1" -o "$2"; }
-verify() { echo "$1  $2" | sha256sum --check --status; }
+verify() {
+  if [[ $platform == macos-arm64 ]]; then
+    echo "$1  $2" | shasum -a 256 -c >/dev/null
+  else
+    echo "$1  $2" | sha256sum --check --status
+  fi
+}
 bucket=https://logos-storage-network.fra1.digitaloceanspaces.com
 fetch "$bucket/v0.4/tcp-sprs.json" sprs
 jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and startswith("spr:"))' sprs >/dev/null
@@ -58,14 +78,28 @@ fi
 fetch "$bucket/metadata.json" metadata
 version=$(jq -er '.version | select(test("^[a-zA-Z0-9.+-]+$"))' metadata)
 digest=$(jq -er '.module_sha256 | select(test("^[0-9a-f]{64}$"))' metadata)
-fetch https://github.com/logos-co/logos-logoscore-cli/releases/download/0.3.2/logosctl-x86_64-linux.tar.gz cli.tar.gz
-verify 294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762 cli.tar.gz
+if [[ $platform == macos-arm64 ]]; then
+  archive=logosctl-aarch64-macos.tar.gz
+  cli_sha=f78e8ffdb88e44db1733d43cdea66e7bf558a799fac4f9b88748680f53d79a71
+else
+  archive=logosctl-x86_64-linux.tar.gz
+  cli_sha=294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762
+fi
+fetch "https://github.com/logos-co/logos-logoscore-cli/releases/download/0.3.2/$archive" cli.tar.gz
+verify "$cli_sha" cli.tar.gz
 fetch "https://github.com/logos-co/logos-modules-dev/releases/download/storage_module-v$version/storage_module-$version.lgx" storage.lgx
 verify "$digest" storage.lgx
 tar xf cli.tar.gz
-./logosctl-x86_64.AppImage --appimage-extract >/dev/null
-mv squashfs-root/usr/modules-pkg/{storage_module,package_downloader} .
-if [[ ! -e "$root/runtime" ]]; then mv squashfs-root "$root/runtime"; fi
+if [[ $platform == macos-arm64 ]]; then
+  runtime=logosctl-aarch64-macos
+  mv "$runtime"/modules-pkg/{storage_module,package_downloader} .
+  ln -s bin/logosctl "$runtime/AppRun"
+else
+  ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
+  runtime=squashfs-root
+  mv "$runtime"/usr/modules-pkg/{storage_module,package_downloader} .
+fi
+if [[ ! -e "$root/runtime" ]]; then mv "$runtime" "$root/runtime"; fi
 mkdir -p "$root"/{session,data,home}
 # Some modules use HOME for their own files. Isolate them from existing nodes.
 export HOME="$root/home"

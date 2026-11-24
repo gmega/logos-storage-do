@@ -13,13 +13,19 @@ trap 'rm -rf "$tmp"' EXIT
   jq -r '.[] | "{" + ([.label,.filename,.cid,.sha256,(.size|tostring)] | map(@json) | join(",")) + "},"' catalog.json
   echo '};'
 } > "$tmp/embedded.h"
-cc -Wall -Wextra -Werror -O2 -static -I"$tmp" tui.c -lncursesw -ltinfo -o "$tmp/logos-devnet"
+case "$(uname -sm)" in
+  'Linux x86_64') platform=linux-x86_64; libs=(-static -lncursesw -ltinfo); decoder='base64 --decode' ;;
+  'Darwin arm64') platform=macos-arm64; libs=(-mmacosx-version-min=14.0 -lncurses); decoder='base64 -D' ;;
+  *) echo "Unsupported build host: $(uname -sm)" >&2; exit 1 ;;
+esac
+cc -Wall -Wextra -Werror -O2 -I"$tmp" tui.c "${libs[@]}" -o "$tmp/logos-devnet"
 mv "$tmp/logos-devnet" "$out/"
 # Put the executable inside the standalone installer for offline extraction.
 {
   head -n 1 install.sh
+  echo "bundle_platform=$platform"
   echo 'unpack_tui() {'
-  echo "base64 --decode <<'LOGOS_TUI' | gzip -dc"
+  echo "$decoder <<'LOGOS_TUI' | gzip -dc"
   gzip -nc "$out/logos-devnet" | base64
   echo 'LOGOS_TUI'
   echo '}'
@@ -27,4 +33,4 @@ mv "$tmp/logos-devnet" "$out/"
 } > "$tmp/install.sh"
 chmod 755 "$tmp/install.sh"
 mv "$tmp/install.sh" "$out/install.sh"
-tar czf "$out/logos-devnet-linux-x86_64.tar.gz" -C "$out" logos-devnet install.sh
+tar czf "$out/logos-devnet-$platform.tar.gz" -C "$out" logos-devnet install.sh
