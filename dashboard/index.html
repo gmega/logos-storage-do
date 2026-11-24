@@ -5,6 +5,7 @@
 :root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#10141d;color:#e8edf5}*{box-sizing:border-box}body{max-width:1440px;margin:auto;padding:36px}header{display:flex;justify-content:space-between;align-items:center;gap:24px;border-bottom:1px solid #30394a;padding-bottom:24px}h1{font-size:2rem;letter-spacing:-.04em;margin:4px 0}h2{font-size:1.2rem;margin:0}.eyebrow{color:#a8bcde;font-size:.875rem;letter-spacing:.12em}p{margin:6px 0;color:#b1bfd1}button,select{font:inherit;color:inherit;background:#202c40;border:1px solid #4b607e;border-radius:8px;padding:9px 16px;cursor:pointer}button:focus-visible,summary:focus-visible{outline:2px solid #8dc0ff;outline-offset:4px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:24px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}.card{border:1px solid #344057;background:#171e2a;border-radius:12px;padding:24px}.top{display:flex;justify-content:space-between;gap:12px}.pill{font-size:.875rem;padding:3px 10px;border-radius:20px;background:#24394a;color:#c4d9f2;align-self:start}.good{background:#173f34;color:#8de2b9}.warn{background:#493a1b;color:#f9d585}.bad{background:#4b2631;color:#ffafbc}.stats{display:flex;gap:24px;margin:24px 0}.stat b{display:block;font-size:1.7rem}.stat span,.meta{font-size:.875rem;color:#b1bfd1}.services{display:grid;gap:8px;margin:14px 0}details{border-top:1px solid #344057;padding:12px 0}summary{cursor:pointer;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;max-height:400px;overflow:auto;background:#10141d;padding:16px;border-radius:6px}code{overflow-wrap:anywhere}.error{color:#ffafbc}#notice{padding:12px 0}footer{margin:28px 0;color:#a3b2c7;font-size:.875rem}@media(max-width:600px){body{padding:20px}header{align-items:start}.top{flex-wrap:wrap}.toolbar{align-items:start;flex-direction:column}}
 .files{margin:20px 0;padding:16px;border:1px solid #344057;border-radius:8px}.file-row{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer}.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:#ff7d90}.dot.present{background:#71d9a5}.dot.unknown{background:#b1bfd1}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{padding:8px 12px;font-size:.875rem}button:disabled{opacity:.45;cursor:not-allowed}.job{font-size:.875rem;overflow-wrap:anywhere}a{color:#9dcaff}
 .detailed-status{border:1px solid #344057;border-radius:8px;padding:14px 16px;margin-top:16px}.detailed-status>summary{font-weight:600}.detailed-status[open]>summary{margin-bottom:12px}
+.names input{min-width:0;flex:1;font:inherit;padding:8px;border:1px solid #4b607e;border-radius:6px}.names .file-row{justify-content:space-between;cursor:default}
 nav{display:flex;gap:16px;align-items:center;flex-wrap:wrap}nav a{white-space:nowrap}
 </style>
 <header><div><div class="eyebrow">LOGOS / DEVNET PORTAL</div><h1>Network health</h1><p>Live node status and discovered service providers</p></div><nav aria-label="Portal"><a href="/join">Join Devnet</a> <button id="refresh">Refresh</button></nav></header>
@@ -17,7 +18,7 @@ function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefine
 function detail(title,value){const d=el('details');d.append(el('summary',title),el('pre',JSON.stringify(value,null,2)));return d}
 function serviceName(id){if(id.includes('autonat'))return 'AutoNAT';if(id.includes('circuit'))return 'Circuit relay';if(id.includes('dht')&&id.includes('proxy'))return 'DHT proxy';if(id.includes('mix'))return 'Mix relay';return id}
 let latestSnapshot=null;
-function render(data){latestSnapshot=data;const age=Math.max(0,Math.floor(Date.now()/1000-data.updatedAt)),stale=age>90;let healthy=0;const cards=[];for(const n of data.nodes){const d=n.debug||{}, providers=d.serviceProviders||{},card=el('article',undefined,'card');const good=n.ok&&n.discoveryReady&&!stale;if(good)healthy++;const top=el('div',undefined,'top'),title=el('div');title.append(el('h2',n.name),el('div',`${n.role} · ${n.ip}`,'meta'));top.append(title,el('span',stale?'Stale':!n.ok?'Unavailable':n.discoveryAvailable===false?'Discovery not exposed':!n.discoveryReady?'Discovery incomplete':'Healthy','pill '+(good?'good':n.ok?'warn':'bad')));card.append(top);const stats=el('div',undefined,'stats');for(const [label,value]of [['DHT peers',d.table?.nodes?.length??'—'],['Connections',d.connections?.length??'—'],['Services',Object.keys(providers).length]]){const stat=el('div',undefined,'stat');stat.append(el('b',String(value)),el('span',label));stats.append(stat)}card.append(stats,el('div',`Version ${n.version||d.storage?.version||'unknown'}`,'meta'),el('div',`Reachability: ${d.nat?.reachability||'unknown'} · Service: ${n.service||'unknown'}`,'meta'));if(n.error)card.append(el('p',n.error,'error'));const services=el('div',undefined,'services');if(!Object.keys(providers).length)services.append(el('p',n.discoveryAvailable===false?'This build does not expose provider tables in debug.':'No discovered providers reported.','error'));for(const [id,peers]of Object.entries(providers)){const detailNode=detail(`${serviceName(id)} · ${peers.length} providers`,peers);detailNode.title=id;services.append(detailNode)}const detailed=el('details',undefined,'detailed-status');detailed.id=`details-${n.name}`;detailed.open=$(detailed.id)?.open||false;detailed.append(el('summary','Detailed status'),services,detail('Peer identity & addresses',{id:d.id,addrs:d.addrs,spr:d.spr}),detail('DHT routing table',d.table||{}),detail('Connections',d.connections||[]),detail('Full debug response',d));card.append(filePanel(n,data.files||[]),detailed);cards.push(card)}$('nodes').replaceChildren(...cards);$('summary').textContent=`${healthy} / ${data.nodes.length} nodes healthy`;$('updated').textContent=`Updated ${new Date(data.updatedAt*1000).toLocaleString()} · ${age}s ago`;$('notice').textContent=stale?'Snapshots are stale. The collector may be unavailable.':''}
+function render(data){const activeResolver=document.activeElement?.closest('.names form') ? document.activeElement : null;latestSnapshot=data;const age=Math.max(0,Math.floor(Date.now()/1000-data.updatedAt)),stale=age>90;let healthy=0;const cards=[];for(const n of data.nodes){const d=n.debug||{}, providers=d.serviceProviders||{},card=el('article',undefined,'card');const good=n.ok&&n.discoveryReady&&!stale;if(good)healthy++;const top=el('div',undefined,'top'),title=el('div');title.append(el('h2',n.name),el('div',`${n.role} · ${n.ip}`,'meta'));top.append(title,el('span',stale?'Stale':!n.ok?'Unavailable':n.discoveryAvailable===false?'Discovery not exposed':!n.discoveryReady?'Discovery incomplete':'Healthy','pill '+(good?'good':n.ok?'warn':'bad')));card.append(top);const stats=el('div',undefined,'stats');for(const [label,value]of [['DHT peers',d.table?.nodes?.length??'—'],['Connections',d.connections?.length??'—'],['Services',Object.keys(providers).length]]){const stat=el('div',undefined,'stat');stat.append(el('b',String(value)),el('span',label));stats.append(stat)}card.append(stats,el('div',`Version ${n.version||d.storage?.version||'unknown'}`,'meta'),el('div',`Reachability: ${d.nat?.reachability||'unknown'} · Service: ${n.service||'unknown'}`,'meta'));if(n.error)card.append(el('p',n.error,'error'));const services=el('div',undefined,'services');if(!Object.keys(providers).length)services.append(el('p',n.discoveryAvailable===false?'This build does not expose provider tables in debug.':'No discovered providers reported.','error'));for(const [id,peers]of Object.entries(providers)){const detailNode=detail(`${serviceName(id)} · ${peers.length} providers`,peers);detailNode.title=id;services.append(detailNode)}const detailed=el('details',undefined,'detailed-status');detailed.id=`details-${n.name}`;detailed.open=$(detailed.id)?.open||false;detailed.append(el('summary','Detailed status'),services,detail('Peer identity & addresses',{id:d.id,addrs:d.addrs,spr:d.spr}),detail('DHT routing table',d.table||{}),detail('Connections',d.connections||[]),detail('Full debug response',d));card.append(filePanel(n,data.files||[]),namePanel(n),detailed);cards.push(card)}$('nodes').replaceChildren(...cards);if(activeResolver?.isConnected)activeResolver.focus({preventScroll:true});$('summary').textContent=`${healthy} / ${data.nodes.length} nodes healthy`;$('updated').textContent=`Updated ${new Date(data.updatedAt*1000).toLocaleString()} · ${age}s ago`;$('notice').textContent=stale?'Snapshots are stale. The collector may be unavailable.':''}
 const selections=new Map(),jobs=new Map(),confirmedDeletions=new Map();
 function filePresence(n,file){
  const key=`${n.name}:${file.cid}`,deletedAt=confirmedDeletions.get(key);
@@ -38,6 +39,42 @@ function filePanel(n,files){
  for(const [action,label]of [['direct','Download direct'],['mix','Download via Mix'],['delete','Delete']]){const b=el('button',label);b.disabled=jobs.get(n.name)?.state==='running'||(action==='delete'&&n.protected)||!files.length;b.onclick=()=>startJob(n,action);actions.append(b)}
  panel.append(actions,status);const job=jobs.get(n.name);if(job){status.textContent=job.message;if(job.url){const link=el('a','Open file');link.href=job.url;link.target='_blank';link.rel='noopener';status.append(' · ',link)}}
  if(n.protected)panel.append(el('p','Source node: deletion is disabled.','meta'));panel.append(el('p','Presence is based on manifests. Cached data may satisfy either download mode.','meta'));return panel
+}
+const resolverPanels=new Map();
+function namePanel(n){
+ if(!n.protected && resolverPanels.has(n.name))return resolverPanels.get(n.name);
+ const panel=el('section',undefined,'files names');
+ panel.append(el('strong','Name Service'));
+ if(n.protected){
+  for(const entry of n.names||[]){
+   const row=el('div',undefined,'file-row'),copy=el('button','Copy CID');
+   copy.setAttribute('aria-label',`Copy CID for ${entry.label}`);
+   copy.onclick=async()=>{
+    try{await navigator.clipboard.writeText(entry.nameKey);copy.textContent='Copied'}
+    catch{if(!row.querySelector('code'))row.append(el('code',entry.nameKey))}
+   };
+   row.append(el('span',entry.label),copy);panel.append(row);
+  }
+  if(!n.names?.length)panel.append(el('p','No published names available.'));
+  return panel;
+ }
+ const form=el('form',undefined,'actions'),input=el('input'),button=el('button','Resolve'),result=el('pre');
+ input.placeholder='Name CID';input.setAttribute('aria-label',`Name CID to resolve on ${n.name}`);
+ input.required=true;input.maxLength=512;input.spellcheck=false;
+ result.setAttribute('role','status');result.hidden=true;
+ form.onsubmit=async event=>{
+  event.preventDefault();if(button.disabled)return;
+  button.disabled=true;input.readOnly=true;result.hidden=false;result.textContent='Resolving…';
+  try{
+   const response=await fetch('/api/resolve',{method:'POST',headers:{'Content-Type':'application/json','X-Dashboard-Request':'1'},
+    body:JSON.stringify({node:n.name,nameKey:input.value.trim()})});
+   if(!response.headers.get('Content-Type')?.includes('application/json'))throw Error(`Lookup failed (HTTP ${response.status})`);
+   const data=await response.json();if(!response.ok)throw Error(data.error);
+   result.textContent=data.cid||'No record found for this name.';
+  }catch(error){result.textContent=error.message}
+  finally{button.disabled=false;input.readOnly=false}
+ };
+ form.append(input,button);panel.append(form,result);resolverPanels.set(n.name,panel);return panel;
 }
 function downloadView(viewer,node,file,action){
  if(!viewer)return null;

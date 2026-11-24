@@ -64,7 +64,7 @@ The dashboard is public; no login is required. Both the page and
 `/health.json` expose node addresses, versions, peer connections and debug data.
 Dashboard v1.1 allows downloading two fixed datasets directly or via Mix, and deleting their local storage copies except on RS1.
 A compromise of the host itself is more serious: it also runs the bootstrap
-storage node. The dashboard SSH key permits snapshots and only these fixed file operations.
+storage node. The dashboard SSH key permits snapshots, fixed file operations and name lookups.
 
 With no DNS name configured, HTTPS uses a self-signed certificate containing the
 droplet IP. The public certificate is saved in `scripts/.dashboard/server.crt`.
@@ -81,6 +81,13 @@ unprivileged `logos-dashboard` user. Its dedicated SSH key is restricted on each
 node to a forced command that validates file IDs and operations, with forwarding disabled and source IP
 restricted to the dashboard host. SSH host keys are pinned through Ansible.
 No daemon control port is exposed publicly.
+
+The dashboard playbook publishes `Farewell to Westphalia` and `Random 200MB`
+from RS1 using the same dataset CIDs as the file catalog. Each publication
+uses sequence number zero so the module selects the sequence number. In RS1’s
+**Name Service** panel, use **Copy CID** beside a label. Paste that name CID
+into another node’s **Name Service** panel and select **Resolve** to look up
+the dataset CID from that node. A new publication can take time to reach peers.
 
 Each node card has selectable random-file and book entries. Green/red presence is
 based on CID membership in manifests; gray means the snapshot is unavailable.

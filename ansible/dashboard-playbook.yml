@@ -77,6 +77,16 @@
         src: ../dashboard/node-files.py
         dest: /opt/logos-dashboard/node-files.py
         mode: '0755'
+    - name: Publish the catalog names from RS-1
+      ansible.builtin.command:
+        argv:
+          - /opt/logos-dashboard/node-files.py
+          - publish
+          - "{{ 'Random 200MB' if item.id == 'random' else item.label }}"
+          - "{{ item.cid }}"
+      loop: "{{ hostvars[groups['rs_nodes'][0]].dashboard_files }}"
+      when: inventory_hostname == groups['rs_nodes'][0]
+      register: published_names
     - name: Install forced snapshot command
       ansible.builtin.template:
         src: roles/dashboard/templates/snapshot.sh.j2
@@ -126,7 +136,14 @@
         content: |
           [
           {% for host in groups['mp_nodes'] + groups['rs_nodes'] %}
-          {{ {'name': host, 'ip': hostvars[host].public_ip, 'role': ('MP' if host in groups['mp_nodes'] else 'RS'), 'protected': host == groups['rs_nodes'][0]} | to_json }}{{ ',' if not loop.last else '' }}
+          {% set publisher = host == groups['rs_nodes'][0] %}
+          {{ {
+            'name': host, 'ip': hostvars[host].public_ip,
+            'role': ('MP' if host in groups['mp_nodes'] else 'RS'),
+            'protected': publisher,
+            'names': (hostvars[host].published_names.results | map(attribute='stdout') | map('from_json') | list
+                      if publisher else [])
+          } | to_json }}{{ ',' if not loop.last else '' }}
           {% endfor %}
           ]
     - name: Pin SSH host keys obtained through Ansible

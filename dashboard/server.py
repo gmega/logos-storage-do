@@ -4,6 +4,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ JOBS = {}
 LOCK = threading.Lock()
 NODES = {}
 FILES = {}
+RESOLVERS = threading.BoundedSemaphore(2)
 
 def ssh(node, action, file_id):
     return ['ssh', '-i', '/var/lib/logos-dashboard/id_ed25519', '-o', 'BatchMode=yes',
@@ -93,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        if self.path != '/api/jobs':
+        if self.path not in ('/api/jobs', '/api/resolve'):
             return self.reply(404, {'error': 'Not found'})
         # Custom header + JSON require a same-origin browser request; no CORS allowed.
         if self.headers.get('X-Dashboard-Request') != '1' or self.headers.get('Content-Type') != 'application/json':
@@ -104,9 +106,18 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 1024:
                 raise ValueError('Invalid request size')
-            node, file_id, action = validate(json.loads(self.rfile.read(length)))
+            data = json.loads(self.rfile.read(length))
+            if self.path == '/api/resolve':
+                node, key = data.get('node'), data.get('nameKey')
+                if node not in NODES or NODES[node]['protected'] or not re.fullmatch(r'[A-Za-z0-9]{1,512}', key):
+                    raise ValueError('Invalid node or name CID')
+            else:
+                node, file_id, action = validate(data)
         except (ValueError, TypeError, AttributeError):
-            return self.reply(400, {'error': 'Invalid request or protected source node'})
+            message = 'Invalid node or name CID' if self.path == '/api/resolve' else 'Invalid request or protected source node'
+            return self.reply(400, {'error': message})
+        if self.path == '/api/resolve':
+            return self.resolve(node, key)
         with LOCK:
             for token, job in list(JOBS.items()):
                 if job['state'] != 'running' and job['expires'] < time.time():
@@ -119,6 +130,24 @@ class Handler(BaseHTTPRequestHandler):
             JOBS[token] = dict(node=node, file=file_id, action=action, state='running', phase='connecting', nodeBytes=0, totalBytes=FILES[file_id]['size'], expires=time.time()+1800)
             threading.Thread(target=run_job, args=(token,), daemon=True).start()
         self.reply(202, {'id': token})
+
+    def resolve(self, node, key):
+        if not RESOLVERS.acquire(blocking=False):
+            return self.reply(429, {'error': 'Resolvers are busy. Try again shortly.'})
+        try:
+            response = subprocess.run(ssh(node, 'resolve', key), capture_output=True, text=True, timeout=245)
+            if response.returncode:
+                return self.reply(502, {'error': response.stderr.strip()[-500:] or 'Node lookup failed'})
+            payload = json.loads(response.stdout)
+            if not isinstance(payload, dict) or not isinstance(payload.get('cid'), str):
+                raise ValueError('Missing CID in response')
+            self.reply(200, payload)
+        except (OSError, ValueError):
+            self.reply(502, {'error': 'Invalid response from the node'})
+        except subprocess.TimeoutExpired:
+            self.reply(504, {'error': 'The node timed out resolving this name'})
+        finally:
+            RESOLVERS.release()
 
     def do_GET(self):
         parts = self.path.split('/')
