@@ -13,12 +13,23 @@ trap 'rm -rf "$tmp"' EXIT
   jq -r '.[] | "{" + ([.label,.filename,.cid,.sha256,(.size|tostring)] | map(@json) | join(",")) + "},"' catalog.json
   echo '};'
 } > "$tmp/embedded.h"
-case "$(uname -sm)" in
+compiler=(cc)
+host=$(uname -sm)
+if [[ $# == 2 && $1 == --macos-sdk && $host == 'Linux x86_64' ]]; then
+  sdk=$2
+  [[ -f "$sdk/usr/include/ncurses.h" ]] || { echo "Expected a macOS SDK with ncurses headers" >&2; exit 1; }
+  compiler=(clang -target arm64-apple-macos14 -isysroot "$sdk" --ld-path="$(command -v ld64.lld)" -Wl,-platform_version,macos,14.0,14.4)
+  host='Darwin arm64'
+elif [[ $# != 0 ]]; then
+  echo 'Usage: build.sh [--macos-sdk /path/to/MacOSX14.4.sdk]' >&2
+  exit 1
+fi
+case "$host" in
   'Linux x86_64') platform=linux-x86_64; libs=(-static -lncursesw -ltinfo); decoder='base64 --decode' ;;
   'Darwin arm64') platform=macos-arm64; libs=(-mmacosx-version-min=14.0 -lncurses); decoder='base64 -D' ;;
   *) echo "Unsupported build host: $(uname -sm)" >&2; exit 1 ;;
 esac
-cc -Wall -Wextra -Werror -O2 -I"$tmp" tui.c "${libs[@]}" -o "$tmp/logos-devnet"
+"${compiler[@]}" -Wall -Wextra -Werror -O2 -I"$tmp" tui.c "${libs[@]}" -o "$tmp/logos-devnet"
 mv "$tmp/logos-devnet" "$out/"
 # Put the executable inside the standalone installer for offline extraction.
 {
