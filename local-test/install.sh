@@ -115,8 +115,8 @@ if [[ $platform == macos-arm64 ]]; then
   test -f "$module/storage_module_plugin.dylib"
   mv package/manifest.json package/assets "$module/"
   printf %s darwin-arm64 >"$module/variant"
-  mkdir -p "$root/session/modules"
-  mv "$module" "$root/session/modules/storage_module"
+  mkdir -p "$root/session/modules/storage_module"
+  cp -R "$module/." "$root/session/modules/storage_module/"
 else
   "$cli" "$session" daemon start --detach 9>&-
   started=true

@@ -38,9 +38,17 @@ try:
     wait_for(lambda: status.exists() and "DHT peers" in status.read_text())
     os.write(master, b"x")
     wait_for(lambda: "Daemon shutting down" in (root / "daemon.log").read_text())
-    time.sleep(1)
-    os.write(master, b"q")
-    assert proc.wait(timeout=10) == 0
+    # Drain curses redraws while waiting for the stop worker to finish.
+    deadline = time.monotonic() + 15
+    while proc.poll() is None and time.monotonic() < deadline:
+        os.write(master, b"q")
+        if select.select([master], [], [], 0.25)[0]:
+            try:
+                os.read(master, 65536)
+            except OSError:
+                break
+        time.sleep(0.05)
+    assert proc.wait(timeout=3) == 0
 except Exception:
     log = root / "daemon.log"
     if log.exists():

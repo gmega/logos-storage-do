@@ -53,11 +53,12 @@ jobs:
       - name: Install cross-build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld nix-bin jq
+          sudo apt-get install -y clang-18 lld-18 nix-bin jq
       - name: Build for Apple Silicon with the macOS 14.4 SDK
         run: |
           sdk=/nix/store/c3xfmn0gi4zss7yzgh2k969xcjjyv5p0-macOS-SDK-14.4
           sudo nix --extra-experimental-features nix-command copy --from https://cache.nixos.org "$sdk"
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
           local-test/build.sh --macos-sdk "$sdk"
           file artifacts/local-test/logos-devnet | grep 'Mach-O 64-bit arm64'
       - uses: actions/upload-artifact@v4
