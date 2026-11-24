@@ -32,11 +32,10 @@ cleanup() {
 }
 trap cleanup EXIT
 private=false
-advertise=true
-if [[ $ACTION == mix ]]; then private=true; advertise=false; fi
+if [[ $ACTION == mix ]]; then private=true; fi
 echo "Starting $ACTION download..."
 pending=true
-call downloadToUrl "$CID" "$stage/payload" false 65536 "$private" "$advertise" >/dev/null
+call downloadToUrl "$CID" "$stage/payload" false 65536 "$private" false >/dev/null
 for ((i=0; i<300; i++)); do
     bytes=$(stat -c %s "$stage/payload" 2>/dev/null || echo 0)
     echo "$ACTION download: $((bytes*100/SIZE))%  ($bytes / $SIZE bytes)"

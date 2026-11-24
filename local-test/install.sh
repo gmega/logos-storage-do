@@ -3,7 +3,9 @@
 set -euo pipefail
 umask 077
 [[ $(uname -sm) == 'Linux x86_64' ]] || { echo 'Requires Linux x86-64' >&2; exit 1; }
-script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if ! declare -F unpack_tui >/dev/null; then
+  script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+fi
 # The release build inserts its precompiled TUI here.
 stage_tui() {
   if declare -F unpack_tui >/dev/null; then
@@ -20,6 +22,7 @@ finish_tui() {
   mv -fT -- logos-devnet "$root/logos-devnet"
   printf 'Launch the TUI with %q\n' "$root/logos-devnet"
 }
+main() {
 root=${LOGOS_DEVNET_HOME:-"${XDG_DATA_HOME:-$HOME/.local/share}/logos-devnet"}
 mkdir -p "$root"
 cd "$root"
@@ -80,3 +83,5 @@ mv sprs "$root/devnet-sprs.json"
 mv metadata "$root/installed"
 echo "Installed $version in $root"
 finish_tui
+}
+main </dev/null
