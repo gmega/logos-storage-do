@@ -173,10 +173,15 @@ resource "digitalocean_spaces_bucket_object" "metadata" {
   content_type = "application/json"
 }
 
-# Only the bootstrap host serves the authenticated HTTPS dashboard.
+# MP1 serves the ACME HTTP challenge and the HTTPS dashboard.
 resource "digitalocean_firewall" "dashboard" {
   name        = "${var.name_prefix}-dashboard-fw"
   droplet_ids = [digitalocean_droplet.mp[0].id]
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "80"
+    source_addresses = ["0.0.0.0/0"]
+  }
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"

@@ -3,8 +3,8 @@ limit_conn_zone $server_name zone=dashboard_streams:1m;
 server {
     listen 443 ssl;
     server_name _;
-    ssl_certificate /etc/nginx/logos-dashboard.crt;
-    ssl_certificate_key /etc/nginx/logos-dashboard.key;
+    ssl_certificate /etc/letsencrypt/live/logos-dashboard/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/logos-dashboard/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     root /opt/logos-dashboard;
     add_header X-Content-Type-Options nosniff always;
