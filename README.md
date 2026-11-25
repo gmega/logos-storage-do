@@ -1,162 +1,82 @@
-# Logos Storage v0.4 on DigitalOcean
+# Logos Storage - Private Devnet
 
-Terraform manages four provider (MP) droplets, two regular storage (RS) droplets,
-a Spaces bucket, and firewalls. Ansible installs precompiled portable binaries,
-starts the network and verifies discovery plus an RS-to-RS content transfer.
+This repository contains a self-contained Logos Storage devnet for the Digital Ocean platform. It includes storage nodes and mix relays, as well as a portal and dashboard. It's been mostly generated with AI.
 
-Nodes learn Mix relays, DHT proxies, AutoNAT servers and circuit relays through
-service discovery. Only bootstrap SPRs are supplied statically. MP nodes advertise
-all four services (`mix-enabled`, `dht-proxy-server`, `autonat-server`,
-`relay-server`). RS nodes use discovery to find DHT proxies and relays.
+----
 
-## Deploy
+## Network
 
-Requirements: Terraform, jq, Python 3, OpenSSL, curl, doctl, an SSH key registered
-in DigitalOcean, and the `logos-storage-do` conda environment with Ansible.
-`scripts/conda.sh` locates that environment. Set `DO_TOKEN` (or
-`DIGITALOCEAN_ACCESS_TOKEN`); Spaces credentials live in the ignored
-`scripts/.spaces.env` and are created by `scripts/00-spaces-key.sh` if needed.
+The v0.4 devnet runs six DigitalOcean droplets. Terraform creates the infrastructure and generates the Ansible inventory. Ansible installs the storage module, starts the nodes, and publishes their bootstrap records.
 
-MP1 through MP4 run in New York, London, Amsterdam and Singapore, respectively.
-RS1 runs in Toronto and RS2 in Frankfurt. The dashboard displays each node’s
-location beside its name. The region assignments are in `terraform/main.tf`.
-Configure the Spaces region, droplet sizes and counts in `terraform/terraform.tfvars`.
-Additional nodes use the Spaces region by default.
-The configured SSH key is `giulianos-public-key-2`, with the private key at
-`~/.ssh/id_ed25519-2`. Then run:
+| Node | Location | Role |
+| --- | --- | --- |
+| logos-mp-1 | New York (`nyc3`) | Bootstrap, service provider, and dashboard host |
+| logos-mp-2 | London (`lon1`) | Service provider |
+| logos-mp-3 | Amsterdam (`ams3`) | Service provider |
+| logos-mp-4 | Singapore (`sgp1`) | Service provider |
+| logos-rs-1 | Toronto (`tor1`) | Regular storage, source datasets, and name publisher |
+| logos-rs-2 | Frankfurt (`fra1`) | Regular storage and transfer verification |
 
-```bash
-scripts/deploy.sh
-scripts/deploy.sh --force   # explicitly allow the same version again
-```
+MP1 starts with an empty bootstrap list. The other droplets bootstrap from MP1’s signed peer record (SPR) over TCP port 8080. Joining clients receive the TCP records for all four MP nodes. Nodes discover Mix relays, DHT proxies, AutoNAT servers, and circuit relays through the network.
 
-The deployment resolves the newest **published** `storage_module` release by
-publication time from the [dev catalog](https://github.com/logos-co/logos-modules-dev).
-It pins its complete version, download URL and SHA-256 once, in
-`artifacts/release.json`, for every node. A release without Linux AMD64 is refused;
-it does not silently fall back to an older version. A build still running in
-Actions is not yet a published release.
+## Join the devnet
 
-Before changing infrastructure or nodes, it compares that version with the
-bucket's root `metadata.json`, whose global `version` field records the last
-successfully verified deployment. An identical version is refused unless
-`--force` is passed. Network/authentication errors are fatal; only HTTP 404 means
-there is no prior metadata. Metadata is updated after node versions, discovery,
-public bootstrap artifacts and the transfer test pass. Failed deployments leave
-the previous successful version in place and can be retried.
+Open **Join Devnet** on the dashboard and run the installer for your platform. The page lists the prerequisites and provides a link to inspect each script. [Join Devnet](https://104.236.228.87/join)
 
-Portable `logosctl` 0.3.2 is pinned by SHA-256 in the storage role defaults.
-The AppImage is extracted so droplets do not need FUSE or Nix. The bundled storage module and package downloader are preserved outside the
-runtime scan path: CLI 0.3.2 otherwise starts its own storage node automatically.
-Ansible downloads packages, and the package manager installs local LGX files.
-The package is
-installed into `/var/lib/logoscore` using its package manager. The systemd service
-keeps the name `logoscore` for operational continuity, but runs `logosctl`.
+| Platform | Installer |
+| --- | --- |
+| Linux x86-64 | [install-linux-x86_64.sh](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/install-linux-x86_64.sh) |
+| macOS 14+ on Apple Silicon | [install-macos-arm64.sh](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/install-macos-arm64.sh) |
+
+Run the executable printed by the installer and use **Start** to launch your node. New local nodes listen on port 8090. To refresh an existing installation after the network moves, rerun the installer and restart the local node. The default install directory is `~/.local/share/logos-devnet`. You can override it with `LOGOS_DEVNET_HOME`.
+
+For a standalone storage client, generate a config from the published TCP records. The JSON and TOML commands write to stdout. TOML output requires the Python package `tomli-w`.
 
 ```bash
-terraform -chdir=terraform output
-ssh root@NODE 'logosctl --config-dir=/var/lib/logoscore call storage_module debug'
-scripts/restart.sh
+scripts/gen_config.sh json ./logos-storage-data > config.json
 ```
+
+Use `toml` in place of `json` for TOML, or set `ARTIFACT_URL` to another bucket and prefix. The public bootstrap records are available as [JSON](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/tcp-sprs.json) or [one record per line](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/tcp-sprs.txt).
 
 ## Dashboard
 
-The bootstrap droplet serves the dashboard on HTTPS port 443. No extra droplet
-is required. Run `terraform -chdir=terraform output -raw dashboard_url` for its URL.
+The public HTTPS dashboard on MP1 refreshes node health every 30 seconds. Each card shows the node’s location, connections, DHT peers, and discovered providers. Expand **Detailed status** for the storage module’s debug response. Snapshots older than 90 seconds are marked stale. [Network health](https://104.236.228.87/)
 
-The dashboard is public; no login is required. Both the page and
-`/health.json` expose node addresses, versions, peer connections and debug data.
-Dashboard v1.1 allows downloading two fixed datasets directly or via Mix, and deleting their local storage copies except on RS1.
-A compromise of the host itself is more serious: it also runs the bootstrap
-storage node. The dashboard SSH key permits snapshots, fixed file operations and name lookups.
+- **Files.** Select the book or the 200 MiB random file and download it directly or via Mix. The presence indicator checks for the dataset CID in that node’s manifests. The download page estimates speed separately for the node download and the copy to the dashboard. Both stages verify SHA-256. Cached data can satisfy either mode. A completed file is available for 15 minutes.
+- **Delete.** Removes the selected dataset from that node’s storage. RS1 retains the source copies. The file API and the node both enforce this restriction.
+- **Name Service.** Use **Copy CID** beside `Farewell to Westphalia` or `Random 200MB` on RS1. Paste the name CID into another node’s **Resolve** field to retrieve its current dataset CID.
 
-With no DNS name configured, HTTPS uses a self-signed certificate containing the
-droplet IP. The public certificate is saved in `scripts/.dashboard/server.crt`.
-Previously generated basic-auth passwords are no longer used.
+The dashboard and its APIs allow anonymous access. The file service runs at most two jobs at once and one per node. Nginx rate-limits job submissions and name lookups, and limits the concurrent requests and bandwidth on job status and content routes. Peers downloading directly over the storage network bypass these dashboard limits.
 
-The dashboard shows runtime health, exact deployed version, DHT peers,
-connections, NAT status and discovered providers by service. Expand a provider
-section to inspect peer addresses and last-seen timestamps; the full debug
-response is also available. Empty discovery tables are marked incomplete and
-snapshots older than 90 seconds are marked stale.
+## Deploy
 
-A systemd timer refreshes snapshots every 30 seconds. The collector runs as the
-unprivileged `logos-dashboard` user. Its dedicated SSH key is restricted on each
-node to a forced command that validates file IDs and operations, with forwarding disabled and source IP
-restricted to the dashboard host. SSH host keys are pinned through Ansible.
-No daemon control port is exposed publicly.
+Run the commands below from the repository root on the deployment machine. You need Bash, Terraform 1.5+, `flock`, `jq`, Python 3, curl, OpenSSH, `doctl`, and a Conda environment containing Ansible. The scripts activate `logos-storage-do` by default. Set `CONDA_ENV` to use another environment.
 
-The dashboard playbook publishes `Farewell to Westphalia` and `Random 200MB`
-from RS1 using the same dataset CIDs as the file catalog. Each publication
-uses sequence number zero so the module selects the sequence number. In RS1’s
-**Name Service** panel, use **Copy CID** beside a label. Paste that name CID
-into another node’s **Name Service** panel and select **Resolve** to look up
-the dataset CID from that node. A new publication can take time to reach peers.
+Export `DO_TOKEN` or `DIGITALOCEAN_ACCESS_TOKEN`. The deployment uses a separate Spaces access key for bucket operations. The key helper creates `scripts/.spaces.env` if needed. The configured SSH key is `giulianos-public-key-2` in DigitalOcean, with the corresponding private key at `~/.ssh/id_ed25519-2` on the controller.
 
-Each node card has selectable random-file and book entries. Green/red presence is
-based on CID membership in manifests; gray means the snapshot is unavailable.
-Downloads are asynchronous: the node downloads the dataset, the dashboard copies
-and verifies its SHA-256, and the browser opens the PDF or saves the random binary.
-The download tab shows node-side bytes and percentage, sampled from the output
-file every two seconds, then separate verification and dashboard-copy stages.
-Progress is reported over SSH stderr, separately from the file bytes.
-The completion link remains available for 15 minutes. Mix uses `isPrivate=true`
-and `advertise=false`; cached data can satisfy either mode. Delete waits for the
-manifest to disappear. RS1 deletion is blocked in both the API and the node command.
-
-The unprivileged file service allows two jobs at once, one per node, and at most
-eight retained jobs (up to 1.6 GiB of file data). Nginx limits job submissions to
-six per minute per IP and four concurrent API requests at 1 MiB/s each. These
-bounds reduce abuse but are not a hard spending cap for a public service.
-No cloud provisioning credentials are used by the dashboard. File API logs are
-in `journalctl -u logos-dashboard-files`.
-
+The per-node region assignments are in `terraform/main.tf`. The checked-in `terraform/terraform.tfvars` selects Ubuntu 24.04, droplet size `s-8vcpu-16gb`, the Frankfurt Spaces bucket, and the `v0.4` object prefix. Changing a live droplet’s region requires replacing it.
 
 ```bash
-cd ansible
-ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json
+scripts/deploy.sh
 ```
 
-## Join Devnet
+The script selects the newest published storage module from the dev catalog, requires a Linux AMD64 build, and saves the version, download URL, and SHA-256 in `artifacts/release.json`. It compares that release with the bucket’s root `metadata.json` before changing infrastructure. Use `scripts/deploy.sh --force` when you intend to redeploy the same version.
 
-The portal’s `/join` page offers installers for Linux x86-64 and macOS 14+ on Apple Silicon, each with the native TUI and node runtime using the standalone installer in the public devnet bucket. The public filenames are `install-linux-x86_64.sh` and `install-macos-arm64.sh`. To publish a new installer, extract `install.sh` from the reviewed platform-specific GitHub Actions bundle and run this command from the repository root:
+Ansible installs checksum-verified precompiled packages with the pinned `logosctl` 0.3.2, starts the `logoscore` systemd service, and preloads the book and a random file on each RS node. The dashboard takes its catalog from RS1. The deployment publishes the TCP bootstrap records, verifies the network and dashboard, then records the successful module version in [deployment metadata](https://logos-storage-network.fra1.digitaloceanspaces.com/metadata.json).
 
-```bash
-scripts/publish-join-installer.sh /path/to/extracted/install.sh
-```
-
-To update the portal pages and routes on an existing dashboard, run `ansible-playbook dashboard-playbook.yml --tags portal --limit mp_bootstrap` from `ansible/`.
-
-## Bootstrap artifacts and client configuration
-
-The bucket publishes `v0.4/tcp-sprs.json` and `v0.4/tcp-sprs.txt` as bootstrap
-records. It no longer publishes or consumes a static mix pool. The root
-`metadata.json` is independent of this namespace.
+## Verify and operate
 
 ```bash
-scripts/gen_config.sh json ./logos-storage-data
-scripts/gen_config.sh toml ./logos-storage-data   # requires Python tomli-w
-```
-
-Set `ARTIFACT_URL` to use a different bucket/prefix. Existing old `v0.2` URLs
-are not the configuration source for v0.4 clients.
-
-## Validation and operations
-
-```bash
+terraform -chdir=terraform output -raw dashboard_url
 python3 -m unittest discover -s tests -v
-terraform -chdir=terraform validate
 source scripts/conda.sh
-cd ansible
-ansible-playbook verify-playbook.yml -e @../artifacts/release.json
+(cd ansible && ansible-playbook verify-playbook.yml -e @../artifacts/release.json)
 ```
 
-Verification waits for all four service provider tables to populate and checks
-that nodes run the same storage revision. A 1 MiB sample uploaded to the first RS
-node is downloaded by the second and checked by SHA-256. Book and 200 MiB sample
-preloads remain part of the RS deployment.
+The live verification checks the nodes’ module versions, DHT routing and all four provider tables. It compares the published bootstrap records with the controller’s exports, then uploads a fresh 1 MiB file to RS1, downloads it privately on RS2, and compares checksums.
 
-Node logs are in `/var/lib/logoscore/logs/` and systemd's `logoscore` journal.
-Collector logs are in `journalctl -u logos-dashboard.service`.
-`scripts/destroy.sh` tears down the Terraform-managed network and bucket;
-`--delete-key` also removes the minted Spaces key.
+- **Logs.** The storage daemon writes to `/var/log/logoscore.log` on each droplet. For a recent excerpt across the fleet, run `(cd ansible && ansible all -m command -a 'tail -n 20 /var/log/logoscore.log')` with the Ansible environment active. On MP1, use `journalctl -u logos-dashboard -u logos-dashboard-files` for the collector and file API.
+- **Restart nodes.** Run `scripts/restart.sh` with the generated inventory present. It restarts MP1 first, then the MP followers one at a time, then the RS nodes. A full deployment also refreshes the public bootstrap records.
+- **Update the dashboard.** From `ansible/`, run `ansible-playbook dashboard-playbook.yml -e @../artifacts/release.json`. To update just the portal pages and nginx routes, use `ansible-playbook dashboard-playbook.yml --tags portal --limit mp_bootstrap`. The deployment saves the dashboard’s self-signed TLS certificate to `scripts/.dashboard/server.crt` for local HTTPS verification.
+- **Publish installers.** If RS1’s catalog changes, refresh `local-test/catalog.json` before building the native installers. Extract `install.sh` from each platform’s GitHub Actions bundle and run `scripts/publish-join-installer.sh /path/to/extracted/install.sh` for each. The publisher selects the public filename from the embedded platform and verifies the uploaded script.
+- **Teardown.** `scripts/destroy.sh` runs Terraform destroy with automatic approval. The separately published installers must be removed before Spaces can delete a nonempty bucket. Pass `--delete-key` to also request deletion of the deployment’s Spaces access key and remove its local credentials file.
