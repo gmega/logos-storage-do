@@ -160,49 +160,17 @@
       ansible.builtin.file:
         path: /etc/nginx/logos-dashboard.htpasswd
         state: absent
-    - name: Generate dashboard TLS certificate
-      ansible.builtin.command:
-        argv:
-          - openssl
-          - req
-          - -x509
-          - -newkey
-          - rsa:3072
-          - -nodes
-          - -days
-          - '365'
-          - -keyout
-          - /etc/nginx/logos-dashboard.key
-          - -out
-          - /etc/nginx/logos-dashboard.crt
-          - -subj
-          - /CN=Logos dashboard
-          - -addext
-          - "subjectAltName=IP:{{ public_ip }}"
-      args:
-        creates: /etc/nginx/logos-dashboard.crt
-      no_log: true
-    - name: Restrict TLS private key
-      ansible.builtin.file:
-        path: /etc/nginx/logos-dashboard.key
-        mode: '0600'
-    - name: Save public certificate for local verification
-      ansible.builtin.fetch:
-        src: /etc/nginx/logos-dashboard.crt
-        dest: ../scripts/.dashboard/server.crt
-        flat: true
+    - name: Configure public dashboard certificate
+      tags: [dashboard_tls]
+      ansible.builtin.import_tasks: dashboard-tls.yml
     - name: Install nginx virtual host
-      tags: [dashboard_access, portal]
+      tags: [dashboard_access, portal, dashboard_tls]
       ansible.builtin.template:
         src: roles/dashboard/templates/nginx.conf.j2
         dest: /etc/nginx/sites-enabled/logos-dashboard
         mode: '0644'
-    - name: Remove default nginx virtual host
-      ansible.builtin.file:
-        path: /etc/nginx/sites-enabled/default
-        state: absent
     - name: Validate nginx configuration
-      tags: [dashboard_access, portal]
+      tags: [dashboard_access, portal, dashboard_tls]
       ansible.builtin.command: nginx -t
       changed_when: false
     - name: Install collector service
@@ -277,15 +245,15 @@
         name: nginx
         state: reloaded
     - name: Enable HTTPS dashboard
-      tags: [dashboard_access]
+      tags: [dashboard_access, dashboard_tls]
       ansible.builtin.systemd:
         name: nginx
         enabled: true
         state: reloaded
     - name: Confirm public dashboard endpoints are available
-      tags: [dashboard_access, portal]
+      tags: [dashboard_access, portal, dashboard_tls]
       ansible.builtin.uri:
         url: "https://{{ public_ip }}{{ item }}"
-        validate_certs: false
+        validate_certs: true
         status_code: 200
       loop: ["/", "/join", "/health.json"]

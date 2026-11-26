@@ -1,0 +1,73 @@
+---
+- name: Install snap support for current Certbot
+  ansible.builtin.apt:
+    name: snapd
+    state: present
+
+- name: Install Certbot
+  ansible.builtin.command: snap install --classic certbot
+  args:
+    creates: /snap/bin/certbot
+
+- name: Create ACME challenge webroot
+  ansible.builtin.file:
+    path: /var/www/dashboard-acme
+    state: directory
+    mode: '0755'
+
+- name: Serve only ACME challenges over HTTP
+  ansible.builtin.copy:
+    dest: /etc/nginx/sites-enabled/logos-dashboard-acme
+    mode: '0644'
+    content: |
+      server {
+          listen 80;
+          server_name {{ public_ip }};
+          location ^~ /.well-known/acme-challenge/ {
+              root /var/www/dashboard-acme;
+              try_files $uri =404;
+          }
+          location / { return 404; }
+      }
+
+- name: Remove default HTTP site before serving challenges
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Check nginx challenge configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Activate challenge route before certificate issuance
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+
+- name: Obtain or reuse dashboard IP certificate and save renewal hook
+  ansible.builtin.command:
+    argv:
+      - /snap/bin/certbot
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      - --register-unsafely-without-email
+      - --webroot
+      - --webroot-path
+      - /var/www/dashboard-acme
+      - --cert-name
+      - logos-dashboard
+      - --ip-address
+      - "{{ public_ip }}"
+      - --required-profile
+      - shortlived
+      - --deploy-hook
+      - nginx -t && systemctl reload nginx
+  register: dashboard_certbot
+  changed_when: "'not yet due' not in dashboard_certbot.stdout"
+
+- name: Enable automatic certificate renewal
+  ansible.builtin.systemd:
+    name: snap.certbot.renew.timer
+    enabled: true
+    state: started
