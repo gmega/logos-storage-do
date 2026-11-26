@@ -64,6 +64,9 @@
       - --deploy-hook
       - nginx -t && systemctl reload nginx
   register: dashboard_certbot
+  until: dashboard_certbot.rc == 0 or 'Service busy' not in dashboard_certbot.stderr
+  retries: 5
+  delay: 30
   changed_when: "'not yet due' not in dashboard_certbot.stdout"
 
 - name: Enable automatic certificate renewal

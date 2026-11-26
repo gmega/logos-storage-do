@@ -6,22 +6,28 @@ This repository contains a self-contained Logos Storage devnet for the Digital O
 
 ## Network
 
-The v0.4 devnet runs six DigitalOcean droplets. Terraform creates the infrastructure and generates the Ansible inventory. Ansible installs the storage module, starts the nodes, and publishes their bootstrap records.
+The v0.4 devnet configuration provisions twelve DigitalOcean droplets. Terraform creates the infrastructure and generates the Ansible inventory. Ansible installs the storage module, starts the nodes, and publishes their bootstrap records.
 
 | Node | Location | Role |
 | --- | --- | --- |
-| logos-mp-1 | New York (`nyc3`) | Bootstrap, service provider, and dashboard host |
-| logos-mp-2 | London (`lon1`) | Service provider |
-| logos-mp-3 | Amsterdam (`ams3`) | Service provider |
-| logos-mp-4 | Singapore (`sgp1`) | Service provider |
+| logos-mp-1 | San Francisco (`sfo3`) | Bootstrap, service provider, and dashboard host |
+| logos-mp-2 | New York (`nyc3`) | Service provider |
+| logos-mp-3 | London (`lon1`) | Service provider |
+| logos-mp-4 | Amsterdam (`ams3`) | Service provider |
+| logos-mp-5 | Frankfurt (`fra1`) | Service provider |
+| logos-mp-6 | Bangalore (`blr1`) | Service provider |
+| logos-mp-7 | Singapore (`sgp1`) | Service provider |
+| logos-mp-8 | Sydney (`syd1`) | Service provider |
 | logos-rs-1 | Toronto (`tor1`) | Regular storage, source datasets, and name publisher |
 | logos-rs-2 | Frankfurt (`fra1`) | Regular storage and transfer verification |
+| logos-rs-3 | Sydney (`syd1`) | Regular storage |
+| logos-rs-4 | San Francisco (`sfo2`) | Regular storage |
 
-MP1 starts with an empty bootstrap list. The other droplets bootstrap from MP1’s signed peer record (SPR) over TCP port 8080. Joining clients receive the TCP records for all four MP nodes. Nodes discover Mix relays, DHT proxies, AutoNAT servers, and circuit relays through the network.
+MP1 starts with an empty bootstrap list. The other droplets bootstrap from MP1’s signed peer record (SPR) over TCP port 8080. Joining clients receive the TCP records for all eight MP nodes. Nodes discover Mix relays, DHT proxies, AutoNAT servers, and circuit relays through the network.
 
 ## Join the devnet
 
-Open **Join Devnet** on the dashboard and run the installer for your platform. The page lists the prerequisites and provides a link to inspect each script. [Join Devnet](https://104.236.228.87/join)
+Open **Join Devnet** on the dashboard and run the installer for your platform. The page lists the prerequisites and provides a link to inspect each script. [Join Devnet](https://137.184.186.5/join)
 
 | Platform | Installer |
 | --- | --- |
@@ -40,7 +46,7 @@ Use `toml` in place of `json` for TOML, or set `ARTIFACT_URL` to another bucket 
 
 ## Dashboard
 
-The public HTTPS dashboard on MP1 refreshes node health every 30 seconds. Each card shows the node’s location, connections, DHT peers, and discovered providers. Expand **Detailed status** for the storage module’s debug response. Snapshots older than 90 seconds are marked stale. [Network health](https://104.236.228.87/)
+The public HTTPS dashboard on MP1 refreshes node health every 30 seconds. Each card shows the node’s location, connections, DHT peers, and discovered providers. Expand **Detailed status** for the storage module’s debug response. Snapshots older than 90 seconds are marked stale. [Network health](https://137.184.186.5/)
 
 - **Files.** Select the book or the 200 MiB random file and download it directly or via Mix. The presence indicator checks for the dataset CID in that node’s manifests. The download page estimates speed separately for the node download and the copy to the dashboard. Both stages verify SHA-256. Cached data can satisfy either mode. A completed file is available for 15 minutes.
 - **Delete.** Removes the selected dataset from that node’s storage. RS1 retains the source copies. The file API and the node both enforce this restriction.
@@ -54,7 +60,7 @@ Run the commands below from the repository root on the deployment machine. You n
 
 Export `DO_TOKEN` or `DIGITALOCEAN_ACCESS_TOKEN`. The deployment uses a separate Spaces access key for bucket operations. The key helper creates `scripts/.spaces.env` if needed. The configured SSH key is `giulianos-public-key-2` in DigitalOcean, with the corresponding private key at `~/.ssh/id_ed25519-2` on the controller.
 
-The per-node region assignments are in `terraform/main.tf`. The checked-in `terraform/terraform.tfvars` selects Ubuntu 24.04, droplet size `s-8vcpu-16gb`, the Frankfurt Spaces bucket, and the `v0.4` object prefix. Changing a live droplet’s region requires replacing it.
+The per-node region assignments are in `terraform/main.tf`. The checked-in `terraform/terraform.tfvars` selects Ubuntu 24.04, droplet size `s-4vcpu-8gb`, the Frankfurt Spaces bucket, and the `v0.4` object prefix. Changing a live droplet’s region requires replacing it.
 
 ```bash
 scripts/deploy.sh

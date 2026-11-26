@@ -1,11 +1,17 @@
 locals {
   # Public-facing bucket name (fixed, no suffix).
   bucket = var.bucket_name
+  # Scope the fleet firewall to this deployment as the node count grows.
+  firewall_tag = "${var.name_prefix}-devnet-nodes"
 
   # Keep node indices stable across regions. Extra nodes use the default region.
-  mp_regions = ["nyc3", "lon1", "ams3", "sgp1"]
-  rs_regions = ["tor1", "fra1"]
+  mp_regions = ["sfo3", "nyc3", "lon1", "ams3", "fra1", "blr1", "sgp1", "syd1"]
+  rs_regions = ["tor1", "fra1", "syd1", "sfo2"]
   locations = {
+    sfo3 = "US - San Francisco"
+    sfo2 = "US - San Francisco"
+    blr1 = "India - Bangalore"
+    syd1 = "Australia - Sydney"
     nyc3 = "US - New York"
     lon1 = "UK - London"
     ams3 = "Netherlands - Amsterdam"
@@ -37,10 +43,9 @@ resource "digitalocean_droplet" "mp" {
   size     = var.droplet_size
   region   = try(local.mp_regions[count.index], var.region)
   ssh_keys = [data.digitalocean_ssh_key.default.fingerprint]
-  tags     = var.tags
+  tags     = concat(var.tags, [local.firewall_tag])
 
-  # RAM/CPU-only resize (no disk grow) so size changes stay reversible and the
-  # droplet is resized in place rather than replaced.
+  # Keep the disk size on compatible in-place resizes.
   resize_disk = false
 }
 
@@ -52,15 +57,15 @@ resource "digitalocean_droplet" "rs" {
   size     = var.droplet_size
   region   = try(local.rs_regions[count.index], var.region)
   ssh_keys = [data.digitalocean_ssh_key.default.fingerprint]
-  tags     = concat(var.tags, ["regular-storage"])
+  tags     = concat(var.tags, ["regular-storage", local.firewall_tag])
 
   resize_disk = false
 }
 
 # Cloud firewall: SSH and libp2p/KadDHT TCP. All egress allowed. Covers MP + RS.
 resource "digitalocean_firewall" "mp" {
-  name        = "${var.name_prefix}-fw"
-  droplet_ids = concat(digitalocean_droplet.mp[*].id, digitalocean_droplet.rs[*].id)
+  name = "${var.name_prefix}-fw"
+  tags = [local.firewall_tag]
 
   inbound_rule {
     protocol         = "tcp"
