@@ -1,11 +1,11 @@
 variable "region" {
-  description = "Spaces region and fallback Droplet region for nodes beyond the six assigned locations."
+  description = "Spaces region and fallback Droplet region for nodes beyond the assigned locations."
   type        = string
   default     = "fra1"
 }
 
 variable "droplet_size" {
-  description = "Droplet size slug for each Mix-Proxy node."
+  description = "Droplet size slug for every MP and RS node."
   type        = string
   default     = "s-4vcpu-8gb"
 }

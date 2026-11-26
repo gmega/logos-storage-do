@@ -1,12 +1,13 @@
 # Deployment parameters for the Logos Storage Mix-Proxy network.
 # Credentials are NOT set here; they come from the environment (see scripts/env.sh).
 
-region       = "fra1"
-droplet_size = "s-8vcpu-16gb"
-image        = "ubuntu-24-04-x64"
-node_count   = 4
-ssh_key_name = "giulianos-public-key-2"
-bucket_name  = "logos-storage-network"
-name_prefix  = "logos-mp"
+region        = "fra1"
+droplet_size  = "s-4vcpu-8gb"
+image         = "ubuntu-24-04-x64"
+node_count    = 8
+rs_node_count = 4
+ssh_key_name  = "giulianos-public-key-2"
+bucket_name   = "logos-storage-network"
+name_prefix   = "logos-mp"
 
 version_prefix = "v0.4"
