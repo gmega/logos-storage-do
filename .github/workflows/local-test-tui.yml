@@ -37,6 +37,16 @@ jobs:
           export LOGOS_DEVNET_HOME="$RUNNER_TEMP/portal-node"
           cat artifacts/local-test/install.sh | /bin/bash
           python3 local-test/smoke-macos.py "$LOGOS_DEVNET_HOME"
+          # A republished module may have the same version and a different digest.
+          cd "$LOGOS_DEVNET_HOME"
+          cp installed expected-metadata
+          cp config.json expected-config
+          jq '.module_sha256 = ("0" * 64)' expected-metadata > installed
+          touch session/modules/storage_module/old-package-file
+          bash "$GITHUB_WORKSPACE/artifacts/local-test/install.sh"
+          test ! -e session/modules/storage_module/old-package-file
+          cmp installed expected-metadata
+          jq -e --slurpfile expected expected-config '. == $expected[0]' config.json
       - name: Upload downloadable bundle
         uses: actions/upload-artifact@v4
         with:

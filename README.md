@@ -34,7 +34,7 @@ Open **Join Devnet** on the dashboard and run the installer for your platform. T
 | Linux x86-64 | [install-linux-x86_64.sh](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/install-linux-x86_64.sh) |
 | macOS 14+ on Apple Silicon | [install-macos-arm64.sh](https://logos-storage-network.fra1.digitaloceanspaces.com/v0.4/install-macos-arm64.sh) |
 
-Run the executable printed by the installer and use **Start** to launch your node. New local nodes listen on port 8090. To refresh an existing installation after the network moves, rerun the installer and restart the local node. The default install directory is `~/.local/share/logos-devnet`. You can override it with `LOGOS_DEVNET_HOME`.
+Run the executable printed by the installer and use **Start** to launch your node. New local nodes listen on port 8090. To update an existing installation, stop the node, quit the TUI, rerun the installer, and start the node again. The installer refreshes the bootstrap records and TUI and replaces the storage module when its deployed version or checksum changes. Your node identity, stored files, and local settings carry over. The default install directory is `~/.local/share/logos-devnet`. You can override it with `LOGOS_DEVNET_HOME`.
 
 For a standalone storage client, generate a config from the published TCP records. The JSON and TOML commands write to stdout. TOML output requires the Python package `tomli-w`.
 

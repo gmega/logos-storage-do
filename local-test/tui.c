@@ -44,7 +44,9 @@ static const char status[] =
     "[\"Storage \\(.storage.version // \"unknown\")   Reachability \\(.nat.reachability // \"unknown\")\","
     "\"DHT peers \\(.table.nodes|length)   Connections \\(.connections|length)   SPR \\(if .spr then \"ready\" else \"pending\" end)\","
     "(.serviceProviders as $p | "
-    "[($p[\"/mix/1.0.0\"]|length), ($p[\"/storage/dht-proxy/1.0.0\"]|length), "
+    "((($p[\"/storage/dht-proxy/2.0.0\"] // []) + ($p[\"/storage/dht-proxy/1.0.0\"] // [])) | "
+    "unique_by(.peerId) | length) as $proxies | "
+    "[($p[\"/mix/1.0.0\"]|length), $proxies, "
     "($p[\"/libp2p/autonat/2/dial-request\"]|length), ($p[\"/libp2p/circuit/relay/0.2.0/hop\"]|length)] | "
     "\"Discovery \\(if all(.[]; .>0) then \"ready\" else \"incomplete\" end)   "
     "Mix \\(.[0])   DHT proxy \\(.[1])   AutoNAT \\(.[2])   Relay \\(.[3])\")] | .[]'";

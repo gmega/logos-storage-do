@@ -29,26 +29,55 @@ finish_tui() {
   mv -f logos-devnet "$root/logos-devnet"
   printf 'Launch the TUI with %q\n' "$root/logos-devnet"
 }
+install_runtime() {
+  if [[ $platform == macos-arm64 ]]; then
+    archive=logosctl-aarch64-macos.tar.gz
+    cli_sha=f78e8ffdb88e44db1733d43cdea66e7bf558a799fac4f9b88748680f53d79a71
+  else
+    archive=logosctl-x86_64-linux.tar.gz
+    cli_sha=294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762
+  fi
+  fetch "https://github.com/logos-co/logos-logoscore-cli/releases/download/0.3.2/$archive" cli.tar.gz
+  verify "$cli_sha" cli.tar.gz
+  tar xf cli.tar.gz
+  if [[ $platform == macos-arm64 ]]; then
+    runtime=logosctl-aarch64-macos
+    mv "$runtime"/modules-pkg/{storage_module,package_downloader} .
+    cat >"$runtime/AppRun" <<'LAUNCH'
+#!/bin/sh
+exec "$(dirname "$0")/bin/logosctl" "$@"
+LAUNCH
+    chmod 755 "$runtime/AppRun"
+  else
+    ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
+    runtime=squashfs-root
+    mv "$runtime"/usr/modules-pkg/{storage_module,package_downloader} .
+  fi
+  mv "$runtime" "$root/runtime"
+}
 main() {
 root=${LOGOS_DEVNET_HOME:-"${XDG_DATA_HOME:-$HOME/.local/share}/logos-devnet"}
 mkdir -p "$root"
 cd "$root"
 root=$PWD
 exec 9>install.lock
-lock_install() {
+lock_fd() {
   if [[ $platform == macos-arm64 ]]; then
-    perl -MFcntl=:flock -e 'open(my $fd, ">&=9") or die $!; exit !flock($fd, LOCK_EX|LOCK_NB)'
+    perl -MFcntl=:flock -e 'open(my $fd, ">&=$ARGV[0]") or die $!; exit !flock($fd, LOCK_EX|LOCK_NB)' "$1"
   else
-    flock -n 9
+    flock -n "$1"
   fi
 }
-lock_install || { echo 'Another installation is running' >&2; exit 1; }
+lock_fd 9 || { echo 'Another installation is running' >&2; exit 1; }
+exec 8>"$root/tui.lock"
+lock_fd 8 || { echo 'Stop your node and quit the TUI, then rerun the installer.' >&2; exit 1; }
 stage=$(mktemp -d "$root/.setup.XXXXXX")
 cli="$root/runtime/AppRun"
 session="--config-dir=$root/session"
-started=false
+live_module="$root/session/modules/storage_module"
+previous="$root/.previous-storage-module"
 cleanup() {
-  if $started; then "$cli" "$session" daemon stop || true; fi
+  if [[ -d "$previous" && ! -e "$live_module" ]]; then mv "$previous" "$live_module"; fi
   rm -rf -- "$stage"
 }
 trap cleanup EXIT
@@ -65,73 +94,65 @@ verify() {
 bucket=https://logos-storage-network.fra1.digitaloceanspaces.com
 fetch "$bucket/v0.4/tcp-sprs.json" sprs
 jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and startswith("spr:"))' sprs >/dev/null
-# Keep the authoritative records separately so Start can replace a stale preset.
-if [[ -f "$root/installed" ]]; then
-    jq --slurpfile records sprs 'del(.network, ."no-bootstrap-node") |
-      ."bootstrap-node" = $records[0]' "$root/config.json" >config.json
-    mv sprs "$root/devnet-sprs.json"
-    mv config.json "$root/config.json"
-    echo "Refreshed private devnet bootstrap records in $root"
-    finish_tui
-    exit 0
-fi
 fetch "$bucket/metadata.json" metadata
 version=$(jq -er '.version | select(test("^[a-zA-Z0-9.+-]+$"))' metadata)
 digest=$(jq -er '.module_sha256 | select(test("^[0-9a-f]{64}$"))' metadata)
-if [[ $platform == macos-arm64 ]]; then
-  archive=logosctl-aarch64-macos.tar.gz
-  cli_sha=f78e8ffdb88e44db1733d43cdea66e7bf558a799fac4f9b88748680f53d79a71
+# Preserve local settings, including the data directory that holds the node identity.
+if [[ -f "$root/config.json" ]]; then
+  jq --slurpfile records sprs 'del(.network, ."no-bootstrap-node") |
+    ."bootstrap-node" = $records[0]' "$root/config.json" >config.json
 else
-  archive=logosctl-x86_64-linux.tar.gz
-  cli_sha=294fbcc6409a8851b7471582bdad2dbfaf681b5d1c67dfffec38ada925dc6762
+  jq -n --arg data "$root/data" --slurpfile records sprs '{
+    "data-dir":$data, "log-level":"DEBUG", "listen-ip":"0.0.0.0",
+    "listen-port":8090, "mix-enabled":true, "bootstrap-node":$records[0]
+  }' >config.json
 fi
-fetch "https://github.com/logos-co/logos-logoscore-cli/releases/download/0.3.2/$archive" cli.tar.gz
-verify "$cli_sha" cli.tar.gz
-fetch "https://github.com/logos-co/logos-modules-dev/releases/download/storage_module-v$version/storage_module-$version.lgx" storage.lgx
-verify "$digest" storage.lgx
-tar xf cli.tar.gz
+
+if [[ ! -x "$cli" ]]; then
+  install_runtime
+fi
+mkdir -p "$root"/{session/modules,data,home}
 if [[ $platform == macos-arm64 ]]; then
-  runtime=logosctl-aarch64-macos
-  mv "$runtime"/modules-pkg/{storage_module,package_downloader} .
-  cat >"$runtime/AppRun" <<'LAUNCH'
-#!/bin/sh
-exec "$(dirname "$0")/bin/logosctl" "$@"
-LAUNCH
-  chmod 755 "$runtime/AppRun"
+  variant=darwin-arm64
+  plugin=storage_module_plugin.dylib
 else
-  ./logosctl-x86_64.AppImage --appimage-extract >/dev/null
-  runtime=squashfs-root
-  mv "$runtime"/usr/modules-pkg/{storage_module,package_downloader} .
+  variant=linux-amd64
+  plugin=storage_module_plugin.so
 fi
-if [[ ! -e "$root/runtime" ]]; then mv "$runtime" "$root/runtime"; fi
-mkdir -p "$root"/{session,data,home}
-# Some modules use HOME for their own files. Isolate them from existing nodes.
-export HOME="$root/home"
-if [[ $platform == macos-arm64 ]]; then
-  # Match the installed LGX layout used by the module loader.
-  mkdir package
-  tar -xzf storage.lgx -C package manifest.json assets variants/darwin-arm64
-  module=package/variants/darwin-arm64
-  test -f "$module/storage_module_plugin.dylib"
-  mv package/manifest.json package/assets "$module/"
-  printf %s darwin-arm64 >"$module/variant"
-  mkdir -p "$root/session/modules/storage_module"
-  cp -R "$module/." "$root/session/modules/storage_module/"
+if [[ -f "$root/installed" && -s "$live_module/$plugin" && ! -e "$previous" ]] &&
+   jq -e --arg v "$version" --arg d "$digest" '.version == $v and .module_sha256 == $d' "$root/installed" >/dev/null &&
+   jq -e --arg v "$version" '.version == $v' "$live_module/manifest.json" >/dev/null; then
+  echo "Storage module $version is current"
 else
-  "$cli" "$session" daemon start --detach 9>&-
-  started=true
-  "$cli" "$session" install "$stage/storage.lgx" -y
-  "$cli" "$session" daemon stop
-  started=false
+  if [[ -d "$root/session/daemon" ]]; then
+    # logosctl also returns exit code 1 for a normally stopped daemon.
+    daemon_info=$("$cli" "$session" daemon status) || [[ $? == 1 ]]
+    case $(jq -er '.daemon.status' <<<"$daemon_info") in
+      not_running|not_configured) ;;
+      running) echo 'Stop your node before updating the storage module, then rerun the installer.' >&2; exit 1 ;;
+      *) echo 'Could not confirm that the local node is stopped.' >&2; exit 1 ;;
+    esac
+  fi
+  fetch "https://github.com/logos-co/logos-modules-dev/releases/download/storage_module-v$version/storage_module-$version.lgx" storage.lgx
+  verify "$digest" storage.lgx
+  # Stage a complete native module before touching the installed copy.
+  tar -xzf storage.lgx manifest.json assets "variants/$variant"
+  module="variants/$variant"
+  test -s "$module/$plugin"
+  jq -e --arg v "$version" '.name == "storage_module" and .version == $v' manifest.json >/dev/null
+  mv manifest.json assets "$module/"
+  printf %s "$variant" >"$module/variant"
+  if [[ -d "$live_module" ]]; then
+    rm -rf -- "$previous"
+    mv "$live_module" "$previous"
+  fi
+  mv "$module" "$live_module"
+  echo "Installed storage module $version"
 fi
-jq -n --arg data "$root/data" --slurpfile sprs sprs '{
-  "data-dir":$data, "log-level":"DEBUG", "listen-ip":"0.0.0.0",
-  "listen-port":8090, "mix-enabled":true, "bootstrap-node":$sprs[0]
-}' >config.json
 mv config.json "$root/config.json"
 mv sprs "$root/devnet-sprs.json"
-mv metadata "$root/installed"
-echo "Installed $version in $root"
 finish_tui
+mv metadata "$root/installed"
+rm -rf -- "$previous"
 }
 main </dev/null
