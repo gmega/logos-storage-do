@@ -9,15 +9,19 @@ import time
 
 ROOT = Path('/opt/logos-dashboard')
 REQUIRED_SERVICES = (
-    '/mix/1.0.0', '/storage/dht-proxy/1.0.0',
+    '/mix/1.0.0',
     '/libp2p/autonat/2/dial-request', '/libp2p/circuit/relay/0.2.0/hop',
 )
 
 def discovery_ready(providers):
-    return isinstance(providers, dict) and all(
-        isinstance(providers.get(service), list) and len(providers[service]) > 0
-        for service in REQUIRED_SERVICES
-    )
+    if not isinstance(providers, dict):
+        return False
+    def populated(service):
+        peers = providers.get(service)
+        return isinstance(peers, list) and bool(peers)
+    return all(map(populated, REQUIRED_SERVICES)) and any(map(populated, (
+        '/storage/dht-proxy/1.0.0', '/storage/dht-proxy/2.0.0',
+    )))
 
 def collect(node):
     result = {**node, 'checkedAt': int(time.time()), 'ok': False}

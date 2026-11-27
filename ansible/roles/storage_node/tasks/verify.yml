@@ -40,7 +40,8 @@
     jq --exit-status '.result.value.serviceProviders |
     type == "object" and
     (.["/mix/1.0.0"] | length > 0) and
-    (.["/storage/dht-proxy/1.0.0"] | length > 0) and
+    ([.["/storage/dht-proxy/1.0.0"], .["/storage/dht-proxy/2.0.0"]] |
+    any(type == "array" and length > 0)) and
     (.["/libp2p/autonat/2/dial-request"] | length > 0) and
     (.["/libp2p/circuit/relay/0.2.0/hop"] | length > 0)'
   args:

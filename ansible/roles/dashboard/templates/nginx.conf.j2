@@ -11,6 +11,7 @@ server {
     add_header Cache-Control "no-store" always;
     location = / { try_files /index.html =404; }
     location = /join { try_files /join.html =404; }
+    location = /config.json { try_files $uri =404; }
     location = /health.json { alias /var/lib/logos-dashboard/health.json; }
     client_max_body_size 1k;
     location = /api/resolve {

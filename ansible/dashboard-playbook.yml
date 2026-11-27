@@ -122,6 +122,18 @@
         dest: "/opt/logos-dashboard/{{ item }}"
         mode: '0644'
       loop: [collector.py, server.py]
+    - name: Publish the storage module config with this deployment's bootstrap records
+      tags: [portal]
+      ansible.builtin.copy:
+        dest: /opt/logos-dashboard/config.json
+        mode: '0644'
+        content: |
+          {{ {
+            'listen-ip': '0.0.0.0',
+            'listen-port': 8090,
+            'mix-enabled': true,
+            'bootstrap-node': lookup('file', playbook_dir + '/../artifacts/tcp-sprs.json') | from_json
+          } | to_nice_json(indent=2) }}
     - name: Install Devnet Portal pages
       tags: [portal]
       ansible.builtin.copy:
@@ -257,3 +269,13 @@
         validate_certs: true
         status_code: 200
       loop: ["/", "/join", "/health.json"]
+    - name: Verify the public module config uses the current bootstrap records
+      tags: [portal]
+      ansible.builtin.uri:
+        url: "https://{{ public_ip }}/config.json"
+        return_content: true
+      register: join_config
+      failed_when: >-
+        join_config.status != 200 or
+        join_config.json['bootstrap-node'] !=
+        (lookup('file', playbook_dir + '/../artifacts/tcp-sprs.json') | from_json)

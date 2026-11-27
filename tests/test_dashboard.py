@@ -11,8 +11,8 @@ spec.loader.exec_module(collector)
 class DashboardTests(unittest.TestCase):
     def test_required_service_missing_despite_four_other_entries(self):
         providers={name:[{}] for name in collector.REQUIRED_SERVICES}
-        self.assertTrue(collector.discovery_ready(providers))
-        providers.pop('/storage/dht-proxy/1.0.0')
+        for version in ('1.0.0', '2.0.0'):
+            self.assertTrue(collector.discovery_ready({**providers, '/storage/dht-proxy/'+version:[{}]}))
         providers['unrelated']=[{}]
         self.assertFalse(collector.discovery_ready(providers))
         self.assertFalse(collector.discovery_ready(None))
@@ -26,6 +26,7 @@ class DashboardTests(unittest.TestCase):
     def test_complete_debug_response_retained(self):
         value={'spr':'spr:example','serviceProviders':{name:[{}] for name in collector.REQUIRED_SERVICES},
                'unknownFutureField':{'value':123}}
+        value['serviceProviders']['/storage/dht-proxy/2.0.0'] = [{}]
         response=subprocess.CompletedProcess([],0,json.dumps({'service':'active','version':'1.2.3',
             'debug':{'result':{'success':True,'value':value}}}), '')
         with patch.object(collector.subprocess,'run',return_value=response):
