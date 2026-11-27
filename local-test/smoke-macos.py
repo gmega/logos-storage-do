@@ -2,6 +2,7 @@
 import fcntl
 import os
 import pty
+import re
 import select
 import struct
 import subprocess
@@ -35,7 +36,7 @@ def wait_for(predicate, seconds=100):
 try:
     os.write(master, b"s")
     status = root / "status.txt"
-    wait_for(lambda: status.exists() and "DHT peers" in status.read_text())
+    wait_for(lambda: status.exists() and re.search(r"Discovery ready.*DHT proxy [1-9]", status.read_text()), seconds=180)
     os.write(master, b"x")
     wait_for(lambda: "Daemon shutting down" in (root / "daemon.log").read_text())
     # Drain curses redraws while waiting for the stop worker to finish.
